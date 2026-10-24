@@ -1,0 +1,170 @@
+{
+  "version": "3.4.0",
+  "date": "2026-10-25",
+  "download": "https://raw.githubusercontent.com/Kimchour/Canva-Headline-Highlighter/main/canva-headline-highlighter.zip?v=3.4.0",
+  "required": false,
+  "added": [
+    "Check for updates in Settings, linked to this GitHub repo",
+    "Updates download through Chrome, and Show the file opens the download in its folder",
+    "Reload the Highlighter: picks up the new files and refreshes your Canva and chat tabs — your settings stay",
+    "Checks quietly every 12 hours and shows a small notice in Quick when a new version is ready",
+    "The version number in the footer — click it to check for updates"
+  ],
+  "fixed": [],
+  "history": [
+    {
+      "version": "3.3.1",
+      "date": "2026-10-02",
+      "added": [],
+      "fixed": [
+        "Fill with photo refused a cropped photo — now it only refuses the black fade",
+        "The same story arriving twice made a finished run wait for a new photo",
+        "Fill Notes no longer tries to close the Notes panel before writing into it"
+      ]
+    },
+    {
+      "version": "3.3.0",
+      "date": "2026-10-01",
+      "added": [
+        "With Automation on, the run waits until a new photo is in the design — from PromptSnap or added yourself",
+        "Waits for a photo that's still uploading, and for a copied page's old photo to be replaced",
+        "Run now and Stop waiting while it waits, and a Wait for the photo switch in Settings"
+      ],
+      "fixed": [
+        "On a blank template, the black fade could be taken for the photo"
+      ]
+    },
+    {
+      "version": "3.2.1",
+      "date": "2026-10-01",
+      "added": [],
+      "fixed": [
+        "Fill Notes kept the old caption when only the paragraphs had changed",
+        "If Canva ignores the paste, the caption is typed into Notes instead",
+        "Censoring now also covers murderous, abusive and bloodied, and never censors a word twice"
+      ]
+    },
+    {
+      "version": "3.2.0",
+      "date": "2026-10-01",
+      "added": [
+        "Fill with photo selects the photo by itself, using Canva's Layers list if something covers it",
+        "Messages appear in a small card outside the panel, so they never cover a button"
+      ],
+      "fixed": [
+        "At 32% zoom the headline wasn't recognised, which stopped Fill with photo and other headline steps",
+        "On a narrow panel the fold button was pushed off the header"
+      ]
+    },
+    {
+      "version": "3.1.0",
+      "date": "2026-09-30",
+      "added": [
+        "Fill with photo: grows the photo to fill the page from the top corners, behind the headline, with Undo",
+        "Compact mode: one status line, a progress bar and Run",
+        "Resize the panel from either side, the bottom or the corner"
+      ],
+      "fixed": [
+        "Finding the headline is faster, and chat pages check replies about three times faster",
+        "Clicks were blocked inside Canva's side panels (Position, Text color, Edit image)"
+      ]
+    },
+    {
+      "version": "3.0.0",
+      "added": [
+        "Automation: stories from Claude or ChatGPT go into Canva and run by themselves",
+        "It never runs over a finished post, never resends old stories, and queues a second story"
+      ],
+      "fixed": []
+    },
+    {
+      "version": "2.8.0",
+      "date": "2026-09-27",
+      "added": [
+        "Fit and line up the headline: full page width, centred, just above your @handle",
+        "Stretch to fill the width switch, and Undo line-up restores size and place"
+      ],
+      "fixed": []
+    },
+    {
+      "version": "2.7.1",
+      "date": "2026-09-27",
+      "added": [],
+      "fixed": [
+        "Repeated words and numbers are coloured where you picked them — the 5 in 50 stays white"
+      ]
+    },
+    {
+      "version": "2.7.0",
+      "date": "2026-09-27",
+      "added": [
+        "Drops the full stop at the end of the headline and clears the empty line under it"
+      ],
+      "fixed": [
+        "Fill Notes said it failed when the caption was already in Notes"
+      ]
+    },
+    {
+      "version": "2.6.0",
+      "date": "2026-09-27",
+      "added": [
+        "Closes Canva's side panels four ways and remembers which one works",
+        "A step that fails is tried once more after clearing the screen"
+      ],
+      "fixed": []
+    },
+    {
+      "version": "2.5.0",
+      "date": "2026-09-27",
+      "added": [
+        "Closes any side panel on the left before each step"
+      ],
+      "fixed": []
+    },
+    {
+      "version": "2.4.0",
+      "date": "2026-09-27",
+      "added": [
+        "Created by Oeng Kimchour watermark",
+        "New installs start with your own settings"
+      ],
+      "fixed": [
+        "Tasks stopped when a side panel pushed the design under the Highlighter"
+      ]
+    },
+    {
+      "version": "2.3.1",
+      "date": "2026-09-25",
+      "added": [],
+      "fixed": [
+        "The loading animation on pinned tools is a smooth, round spinner"
+      ]
+    },
+    {
+      "version": "2.3.0",
+      "date": "2026-09-25",
+      "added": [
+        "Position tools in the menu: Line up headline, Undo line-up, To front, Forward, Backward, To back",
+        "Photo values moved to Settings, and the Finish tab is gone"
+      ],
+      "fixed": []
+    },
+    {
+      "version": "2.2.1",
+      "date": "2026-09-25",
+      "added": [],
+      "fixed": [
+        "A newer story replaces an unanswered Send to Canva card"
+      ]
+    },
+    {
+      "version": "2.2.0",
+      "date": "2026-09-25",
+      "added": [
+        "Send to Canva card for stories written in Claude or ChatGPT",
+        "Send to back tool"
+      ],
+      "fixed": []
+    }
+  ]
+}
