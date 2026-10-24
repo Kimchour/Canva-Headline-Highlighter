@@ -1,0 +1,43 @@
+/* Instructions in people's own words, and the plan each should become.
+   steps: [op, fields?] pairs; ctx: what happened before (for follow-ups). */
+module.exports = [
+  { say: "Grab the headline", steps: [["extract", ["headline"]]] },
+  { say: "Get everything", steps: [["extract", ["headline", "caption", "hashtags"]]] },
+  { say: "Highlight the title", steps: [["highlight"]] },
+  { say: "Copy the caption and hashtags", steps: [["copy", ["caption", "hashtags"]]] },
+  { say: "Find the main story", steps: [["detect", ["headline", "caption"]]] },
+  { say: "Fix the selection", steps: [["reanalyze"]] },
+  { say: "extract everything then highlight the headline and copy the caption", steps: [["extract", ["headline", "caption", "hashtags"]], ["highlight"], ["copy", ["caption"]]] },
+  { say: "copy headline and caption", steps: [["copy", ["headline", "caption"]]] },
+  { say: "highlight and copy the headline", steps: [["highlight"], ["copy", ["headline"]]] },
+  { say: "give me the hashtags", steps: [["extract", ["hashtags"]]] },
+  { say: "what's the headline on the design?", steps: [["extract", ["headline"]]], from: "page" },
+  { say: "where is the headline?", steps: [["locate"]] },
+  { say: "check for updates", steps: [["update"]] },
+  { say: "is there a new version?", steps: [["update"]] },
+  { say: "run everything", steps: [["run"]] },
+  { say: "send it to canva", steps: [["run"]] },
+  { say: "fill notes", steps: [["notes"]] },
+  { say: "line up the headline", steps: [["lineup"]] },
+  { say: "enhance the photo", steps: [["photo"]] },
+  { say: "fill the page with the photo", steps: [["fill"]] },
+  { say: "start over", steps: [["clear"]] },
+  { say: "turn on automation", steps: [["automation"]] },
+  { say: "make it heavier", steps: [["strength"]] },
+  { say: "censor", steps: [["censor"]] },
+  { say: "help", steps: [["help"]] },
+  { say: "no, that's not the headline", steps: [["reanalyze"]] },
+  { say: "set the headline to \"Dog Finds Way Home After 3 Years\"", steps: [["set"]], value: "Dog Finds Way Home After 3 Years" },
+  { say: "caption", steps: [["extract", ["caption"]]] },
+  // follow-ups
+  { say: "copy it", ctx: { lastOp: "extract", lastFields: ["headline"] }, steps: [["copy", ["headline"]]] },
+  { say: "now the caption", ctx: { lastOp: "copy", lastFields: ["headline"] }, steps: [["copy", ["caption"]]] },
+  { say: "and the hashtags", ctx: { lastOp: "copy", lastFields: ["caption"] }, steps: [["copy", ["caption", "hashtags"]]] },
+  { say: "use option 2", ctx: { hasOptions: true }, steps: [["option"]], n: 2 },
+  { say: "the second one", ctx: { hasCandidates: true }, steps: [["pick"]], n: 2 },
+  { say: "yes", ctx: { pendingConfirm: true }, steps: [["confirm"]] },
+  { say: "try again", ctx: { lastFailed: true, lastPlan: [{ op: "highlight" }] }, steps: [["repeat"]] },
+  // not understood: must say so rather than guess
+  { say: "blah blah", steps: [] },
+  { say: "what is the weather like", steps: [] }
+];

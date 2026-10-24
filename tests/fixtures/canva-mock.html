@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mock Canva editor</title>
+<style>
+  /* A stand-in for Canva's editor: top bar, left rail, a page with a photo,
+     a fade, a headline and an @handle. Behaves like Canva where the panel
+     relies on it: one click selects a text box (the text toolbar appears),
+     a double-click opens it for editing, and a paste replaces its text. */
+  html, body { margin: 0; height: 100%; background: #e9ebf0; font-family: system-ui, sans-serif; }
+  header { position: fixed; left: 0; right: 0; top: 0; height: 56px; background: #2b2f8f; color: #fff; display: flex; align-items: center; padding: 0 16px; gap: 12px; }
+  header button { background: rgba(255,255,255,.15); color: #fff; border: 0; border-radius: 6px; padding: 6px 10px; }
+  nav { position: fixed; left: 0; top: 56px; bottom: 0; width: 72px; background: #fff; border-right: 1px solid #ddd; }
+  nav button { display: block; width: 56px; height: 48px; margin: 8px; border: 0; background: #f2f3f5; border-radius: 8px; font-size: 10px; }
+  #toolbar { position: fixed; left: 300px; top: 70px; height: 40px; display: none; gap: 6px; align-items: center; background: #fff; border-radius: 8px; padding: 0 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+  #toolbar.show { display: flex; }
+  #toolbar button { height: 30px; border: 0; background: #f2f3f5; border-radius: 6px; padding: 0 10px; }
+  .stage { position: absolute; left: 330px; top: 200px; width: 480px; height: 600px; background: #111; overflow: hidden; box-shadow: 0 6px 30px rgba(0,0,0,.25); }
+  .photo { position: absolute; left: 0; top: 0; width: 480px; height: 360px; }
+  .fade { position: absolute; left: 0; bottom: 0; width: 480px; height: 320px; }
+  .headline { position: absolute; left: 24px; right: 24px; top: 400px; color: #fff; font-weight: 800; font-size: 30px; line-height: 1.12; text-align: center; letter-spacing: .01em; }
+  .headline p { margin: 0; }
+  .handle { position: absolute; left: 0; right: 0; top: 540px; text-align: center; color: #ddd; font-size: 15px; }
+  .tagline { position: absolute; left: 24px; top: 24px; color: #fff; font-size: 13px; background: rgba(0,0,0,.4); padding: 3px 8px; border-radius: 4px; }
+  #bottom { position: fixed; left: 72px; right: 0; bottom: 0; height: 40px; background: #fff; border-top: 1px solid #ddd; display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+  #notes { position: fixed; left: 72px; top: 56px; bottom: 40px; width: 340px; background: #fff; border-right: 1px solid #ddd; display: none; flex-direction: column; padding: 16px; gap: 8px; }
+  #notes.show { display: flex; }
+  #notes [contenteditable] { flex: 1; border: 1px solid #ccc; border-radius: 6px; padding: 8px; font-size: 13px; overflow: auto; white-space: pre-wrap; }
+  body.twin .handle { display: none; }
+  body.twin .second { display: block; }
+  .second { display: none; position: absolute; left: 24px; right: 24px; top: 120px; color: #fff; font-weight: 800; font-size: 29px; line-height: 1.12; text-align: center; }
+</style>
+</head>
+<body>
+<header><button>Home</button><span>Untitled design</span><button>Share</button></header>
+<nav><button>Design</button><button>Elements</button><button>Text</button><button>Uploads</button></nav>
+<div id="toolbar" role="toolbar"><button aria-label="Font size">32</button><button aria-label="Text color">A</button><button>Position</button></div>
+
+<div class="stage" id="stage">
+  <svg class="photo" viewBox="0 0 480 360"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#4b6cb7"/><stop offset="1" stop-color="#182848"/></linearGradient></defs><rect width="480" height="360" fill="url(#g)"/><circle cx="330" cy="140" r="70" fill="#f6d365" opacity=".8"/></svg>
+  <div class="fade" style="background: linear-gradient(transparent, #000 55%)"></div>
+  <div class="tagline">Breaking news</div>
+  <div class="second" id="second"><p>FAMILY STUNNED AS LOST DOG RETURNS HOME AFTER THREE YEARS</p></div>
+  <div class="headline" id="headline"><p>OLD HEADLINE FROM THE LAST POST STILL SITS HERE</p></div>
+  <div class="handle">@dailystories</div>
+</div>
+
+<div id="notes"><div>Notes</div><div id="counter">0/5000</div><div id="noteed" contenteditable="true"></div></div>
+<div id="bottom"><button id="notesbtn">Notes</button><span id="pages">1 / 3</span></div>
+
+<script>
+  // Canva-ish behaviour the panel depends on.
+  const hl = document.getElementById("headline");
+  const sec = document.getElementById("second");
+  const tb = document.getElementById("toolbar");
+  [hl, sec].forEach(box => {
+    box.addEventListener("click", () => { tb.classList.add("show"); window.__selected = box.id; });
+    box.addEventListener("dblclick", () => {
+      box.setAttribute("contenteditable", "true");
+      box.focus();
+    });
+    box.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const html = e.clipboardData.getData("text/html");
+      const plain = e.clipboardData.getData("text/plain");
+      const p = document.createElement("p");
+      if (html) p.innerHTML = html; else p.textContent = plain;
+      box.innerHTML = "";
+      box.appendChild(p);
+      window.__pastes = (window.__pastes || 0) + 1;
+    });
+  });
+  document.getElementById("notesbtn").addEventListener("click", () => document.getElementById("notes").classList.toggle("show"));
+  const ned = document.getElementById("noteed");
+  ned.addEventListener("paste", (e) => {
+    e.preventDefault();
+    ned.innerText = e.clipboardData.getData("text/plain");
+    document.getElementById("counter").textContent = ned.innerText.length + "/5000";
+  });
+</script>
+</body>
+</html>

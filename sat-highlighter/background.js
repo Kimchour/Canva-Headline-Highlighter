@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // The tab was open before the extension loaded: put the panel in it.
       try {
         await chrome.scripting.insertCSS({ target: { tabId: t.id }, files: ["panel.css"] });
-        await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["content.js"] });
+        await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["engine.js", "intent.js", "content.js"] });
         await new Promise(r => setTimeout(r, 900));
         res = await deliver();
       } catch (e) {}
@@ -146,6 +146,21 @@ async function reloadEverything(from, selfTab) {
   return { ok: true };
 }
 
+// A small "NEW" on the toolbar icon while a newer version is waiting.
+function showUpdateBadge(r) {
+  try {
+    if (!r || !r.ok) return;
+    chrome.action.setBadgeText({ text: r.newer ? "NEW" : "" });
+    if (r.newer) {
+      chrome.action.setBadgeBackgroundColor({ color: "#FFC93C" });
+      if (chrome.action.setBadgeTextColor) chrome.action.setBadgeTextColor({ color: "#14151A" });
+      chrome.action.setTitle({ title: "Headline Highlighter \u2014 version " + r.latest + " is ready" });
+    } else {
+      chrome.action.setTitle({ title: "Headline Highlighter" });
+    }
+  } catch (e) {}
+}
+
 let afterReloadRun = null;
 function afterReload() {
   if (!afterReloadRun) afterReloadRun = doAfterReload();
@@ -178,7 +193,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== "string") return;
 
   if (msg.type === "hh-update-check") {
-    HHUpdates.check(chrome.runtime.getManifest().version, fetch.bind(self)).then(sendResponse);
+    HHUpdates.check(chrome.runtime.getManifest().version, fetch.bind(self)).then((r) => {
+      showUpdateBadge(r);
+      sendResponse(r);
+    });
     return true;
   }
   if (msg.type === "hh-update-download") {

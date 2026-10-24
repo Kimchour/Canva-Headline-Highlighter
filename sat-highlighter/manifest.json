@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Headline Highlighter for Canva",
-  "version": "3.4.0",
-  "description": "Created by Oeng Kimchour. Colour Canva headlines, censor, fill Notes, and send stories from Claude or ChatGPT straight into Canva.",
+  "version": "4.0.0",
+  "description": "Created by Oeng Kimchour. Finds the headline, caption and hashtags in any post, colours Canva headlines and fills Notes.",
   "permissions": [
     "storage",
     "scripting",
@@ -21,6 +21,8 @@
         "https://www.canva.com/design/*"
       ],
       "js": [
+        "engine.js",
+        "intent.js",
         "content.js"
       ],
       "css": [
@@ -35,6 +37,7 @@
         "https://chat.openai.com/*"
       ],
       "js": [
+        "engine.js",
         "chat.js"
       ],
       "run_at": "document_idle"

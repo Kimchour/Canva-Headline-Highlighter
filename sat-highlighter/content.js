@@ -52,24 +52,14 @@
     "blood=bl**d"
   ].join("\n");
 
-  // Words that usually carry the twist. A hit starts a highlight span.
-  const TRIGGERS = `rejected refused denied banned blocked fired sacked arrested charged
-    sentenced convicted sued quit walked stormed broke collapsed crashed diverted grounded
-    canceled cancelled stranded exploded strangled str*ngled fractured paralyzed paralysed
-    hospitalized hospitalised survived saved donated raised inherited humiliated betrayed
-    abandoned adopted reunited discovered revealed confessed admitted apologized apologised
-    escaped vanished disappeared stunned shocked ignored mocked evicted deported bankrupt
-    homeless viral k*lled murd*r murd*red st*bbed d£ath di£d`
-    .trim().split(/\s+/);
-
-  // A span stops dead before any of these — they start a new clause.
-  const STOPPERS = new Set(`and but then because after before while when where whose that
-    which who until though although if is was were are has had have she he they it`
-    .trim().split(/\s+/));
-
-  // A span may run through these but never end on one.
-  const TRIMMERS = new Set(`a an the by from of to in on at with for as so into over`
-    .trim().split(/\s+/));
+  // The recognising (engine.js) and the understanding of what you ask
+  // (intent.js) load first, from the manifest.
+  const E = window.HHEngine, IN = window.HHIntent;
+  if (!E || !IN) {
+    console.warn("Headline Highlighter: engine.js or intent.js didn't load \u2014 reload the extension.");
+    window.__hhLoaded = false;
+    return;
+  }
 
   /* ---------- state ---------- */
 
@@ -89,8 +79,16 @@
     resetBase: true,
     muted: false,
     alignAfter: true,
-    view: "manual",
-    mtab: "headline",
+    view: "studio",     // studio | tools | settings
+    mtab: "headline",   // the Tools tab: headline | caption
+    det: null,          // what Smart Detect found: fields you can edit, and how sure it is
+    askConfirm: true,   // ask before using a headline it isn't sure of
+    confLevel: "balanced",
+    readPage: true,
+    hlProfile: null,    // the headline layout you confirmed, learned
+    runOpen: true,
+    askHist: [],
+    layoutVersion: 4,
     runHighlight: true,
     runNotes: true,
     pinnedTools: ["adjust", "toback", "align"],
@@ -122,7 +120,7 @@
     phrases: [],     // {text, color}
     cursor: -1,
     collapsed: false,
-    size: { w: 344, h: null },
+    size: { w: 360, h: null },
     pos: { x: null, y: 96 }
   };
 
@@ -148,6 +146,14 @@
             alignAfter: state.alignAfter,
             view: state.view,
             mtab: state.mtab,
+            det: state.det,
+            askConfirm: state.askConfirm,
+            confLevel: state.confLevel,
+            readPage: state.readPage,
+            hlProfile: state.hlProfile,
+            runOpen: state.runOpen,
+            askHist: state.askHist,
+            layoutVersion: state.layoutVersion,
             runHighlight: state.runHighlight,
             runNotes: state.runNotes,
             pinnedTools: state.pinnedTools,
@@ -186,14 +192,20 @@
       try {
         chrome.storage.local.get("hh", (r) => {
           if (r && r.hh) Object.assign(state, r.hh);
-          // Older builds had one row of tabs. Map the old choice onto Quick/Manual.
+          // Older builds had one row of tabs, then Quick and Manual. Map the old
+          // choice onto Studio, Tools and Settings.
           if (r && r.hh && !r.hh.view) {
             state.view = state.tab === "all" || !state.tab ? "quick" : "manual";
             state.mtab = { highlight: "headline", caption: "caption" }[state.tab] || "headline";
           }
-          if (!["quick", "manual"].includes(state.view)) state.view = "quick";
-          if (!["headline", "caption", "settings"].includes(state.mtab)) state.mtab = "headline";
-          if (!state.size || typeof state.size.w !== "number") state.size = { w: 344, h: null };
+          if (state.view === "quick") state.view = "studio";
+          if (state.view === "manual") state.view = state.mtab === "settings" ? "settings" : "tools";
+          if (!["studio", "tools", "settings"].includes(state.view)) state.view = "studio";
+          if (!["headline", "caption"].includes(state.mtab)) state.mtab = "headline";
+          if (!["careful", "balanced", "relaxed"].includes(state.confLevel)) state.confLevel = "balanced";
+          if (!Array.isArray(state.askHist)) state.askHist = [];
+          if (state.det && (!state.det.fields || !state.det.meta)) state.det = null;
+          if (!state.size || typeof state.size.w !== "number") state.size = { w: 360, h: null };
           cb();
         });
       } catch (e) { cb(); }
@@ -384,11 +396,6 @@
     }));
   }
 
-  function coreOf(tok) {
-    // Strip punctuation for matching, keep it for display.
-    return tok.t.replace(/^[^\p{L}\p{N}*£]+|[^\p{L}\p{N}*£]+$/gu, "").toLowerCase();
-  }
-
   /* ---------- censoring ---------- */
 
   // Always applied on top of your own list. Add a line to your list with the
@@ -556,199 +563,16 @@ weapon=w*apon`;
     return out;
   }
 
-  // Words that carry no emphasis. They may sit inside a highlighted span
-  // ("BROKE INTO THE HOME") but never begin or end one.
-  const FUNCTION_WORDS = new Set(`a an the and or but of to in on at for with from by as
-    is was were are be been being am has have had it its he she they them his her their
-    that which who whom whose this these those than so if when while after before about
-    not no nor yet then will would shall can could may might must do does did what where
-    how there here we you my your our`.trim().split(/\s+/));
-
-  // A highlight must not run across a clause join. "OUT OF THE WAY AS FLIGHT
-  // ATTENDANTS PUSH" is two ideas; a designer would never paint it as one.
-  const CLAUSE_WORDS = new Set(`and but as when while after before that which who where
-    because if until though although then yet however instead despite since whose
-    she he they it we`.trim().split(/\s+/));
-
-  // The twist usually lands just after one of these.
-  const PIVOTS = new Set(`but yet however instead despite though although until then only
-    now suddenly finally still even after before because since`.trim().split(/\s+/));
-
-  // Named things read as important even when the whole line is capitalised,
-  // where letter case gives nothing away.
-  const ENTITIES = new Set(`tsa fbi cia nasa faa ntsb doj dhs cdc irs fda sec epa
-    nypd lapd ceo cfo coo cto cbs nbc abc bbc cnn nfl nba mlb nhl fifa nato eu un ufc
-    delta united frontier spirit southwest jetblue alaska ryanair easyjet lufthansa
-    emirates qatar boeing airbus embraer tesla spacex amazon google apple meta netflix
-    disney walmart microsoft nvidia openai twitter facebook instagram tiktok youtube uber
-    precheck congress senate parliament pentagon`.trim().split(/\s+/));
-
-  const STRENGTH = {
-    light:  { cover: 0.30, min: 2, max: 3 },
-    medium: { cover: 0.45, min: 3, max: 5 },
-    heavy:  { cover: 0.62, min: 4, max: 8 }
-  };
-
-  // Prepositions that always take an object. A highlight ending on one reads as
-  // cut off — "BROKE INTO" instead of "BROKE INTO THE HOME". Particles that can
-  // legitimately close a phrase (out, up, down, over, off) are not in here.
-  const DANGLERS = new Set(`into onto of to in on at for with from by as than
-    the a an and or but`.trim().split(/\s+/));
-
-  const MAX_SPAN = 6;
-
+  // Which phrases to colour. The scoring lives in engine.js (pickSpans), so it
+  // can be tested on its own: quotes whole, numbers with what they count, never
+  // across a clause join, never ending on a word that leaves the phrase hanging.
   function autoPick() {
     const idx = state.tokens.map((t, i) => ({ t, i })).filter(x => x.t.word);
     idx.forEach(x => x.t.color = null);
-    const N = idx.length;
-    if (!N) { buildPhrases(); return; }
-
-    const core = idx.map(x => coreOf(x.t));
-    const plain = idx.map(x => x.t.t).join(" ");
-    const allCaps = plain === plain.toUpperCase();
-
-    /* --- atoms: runs that must never be split --- */
-    const atoms = [];
-    const quoteAtoms = [];
-
-    // Quoted material, however long. An opening mark with no closing mark runs
-    // to the end of the line, which is how headlines often quote.
-    let open = -1;
-    idx.forEach((x, k) => {
-      const hasOpen = /^["\u201C]/.test(x.t.t);
-      const hasClose = /["\u201D]/.test(x.t.t.slice(hasOpen ? 1 : 0));
-      if (open === -1 && hasOpen) { open = k; if (hasClose && k > open) { quoteAtoms.push([open, k]); open = -1; } return; }
-      if (open !== -1 && /["\u201D]/.test(x.t.t)) { quoteAtoms.push([open, k]); open = -1; }
+    if (!idx.length) { buildPhrases(); return; }
+    E.pickSpans(idx.map(x => x.t.t), state.strength).forEach(([a, b]) => {
+      for (let k = a; k <= b; k++) idx[k].t.color = state.active;
     });
-    if (open !== -1) quoteAtoms.push([open, N - 1]);
-    quoteAtoms.forEach(q => atoms.push(q));
-
-    // A quantity and the thing it counts belong together: "15 YEARS", "$44 MILLION".
-    const isNum = (c) => /[\d$\u00a3\u20ac%]/.test(c);
-    for (let k = 0; k < N; k++) {
-      if (!isNum(core[k])) continue;
-      let end = k;
-      if (k + 1 < N && core[k + 1] && !FUNCTION_WORDS.has(core[k + 1]) && !CLAUSE_WORDS.has(core[k + 1])) end = k + 1;
-      if (end > k) atoms.push([k, end]);
-    }
-
-    const atomOf = new Array(N).fill(-1);
-    atoms.forEach((a, i) => { for (let k = a[0]; k <= a[1]; k++) if (atomOf[k] === -1) atomOf[k] = i; });
-    const edgeOk = (k, isStart) => {
-      const a = atomOf[k];
-      if (a === -1) return true;
-      return isStart ? atoms[a][0] === k : atoms[a][1] === k;
-    };
-
-    /* --- per-word weight --- */
-    const inQuote = new Set();
-    quoteAtoms.forEach(([a, b]) => { for (let k = a; k <= b; k++) inQuote.add(k); });
-
-    const afterPivot = new Set();
-    let pivotAt = -1;
-    idx.forEach((x, k) => {
-      if (!PIVOTS.has(core[k])) return;
-      if (pivotAt === -1) pivotAt = k;
-      for (let q = k + 1; q <= Math.min(k + 4, N - 1); q++) afterPivot.add(q);
-    });
-
-    const score = idx.map((x, k) => {
-      const c = core[k];
-      if (!c || FUNCTION_WORDS.has(c)) return 0;
-      let s = 2;
-      if (isNum(c)) s += 5;
-      if (TRIGGERS.includes(c)) s += 4;
-      if (ENTITIES.has(c)) s += 4;
-      if (inQuote.has(k)) s += 5;
-      if (afterPivot.has(k)) s += 2;
-      if (c.length > 7) s += 1;
-      if (k >= N - 3) s += 1;                                   // the payoff usually lands last
-      const bare = x.t.t.replace(/[^A-Za-z]/g, "");
-      if (!allCaps && bare.length >= 2 && bare.length <= 5 && bare === bare.toUpperCase()) s += 3;
-      else if (!allCaps && k > 0 && /^[A-Z]/.test(x.t.t)) s += 2;
-      return s;
-    });
-
-    // A span may end on a word carrying a comma, but never run past one.
-    const breakAfter = new Set();
-    idx.forEach((x, k) => { if (/[,;:.!?\u2014\u2013]["\u201D')\]]?$/.test(x.t.t)) breakAfter.add(k); });
-
-    /* --- candidates --- */
-    const cands = [];
-    for (let a = 0; a < N; a++) {
-      if (!score[a] || !edgeOk(a, true) || DANGLERS.has(core[a])) continue;
-      for (let b = a; b < Math.min(a + MAX_SPAN, N); b++) {
-        // Never swallow a clause join.
-        if (b > a && CLAUSE_WORDS.has(core[b])) break;
-        if (score[b] && edgeOk(b, false) && !DANGLERS.has(core[b])) {
-          let sum = 0;
-          for (let k = a; k <= b; k++) sum += score[k];
-          const len = b - a + 1;
-          let s = sum / Math.pow(len, 0.45) - (len === 1 ? 1.5 : 0);
-          if (afterPivot.has(a)) s += 2;                        // sits in the twist
-          if (b === N - 1) s += 1.5;                            // closes the line
-          cands.push({ a, b, s });
-        }
-        if (breakAfter.has(b)) break;
-      }
-    }
-    cands.sort((x, y) => y.s - x.s);
-
-    /* --- selection --- */
-    const cfg = STRENGTH[state.strength] || STRENGTH.medium;
-    const used = new Array(N).fill(false);
-    const usedWords = new Set();
-    const taken = [];
-    let covered = 0;
-
-    const claim = (c) => {
-      for (let k = c.a; k <= c.b; k++) { used[k] = true; if (core[k]) usedWords.add(core[k]); }
-      covered += c.b - c.a + 1;
-      taken.push(c);
-    };
-    const free = (c) => {
-      for (let k = Math.max(0, c.a - 1); k <= Math.min(N - 1, c.b + 1); k++) if (used[k]) return false;
-      return true;
-    };
-
-    // Quotes are never a judgement call — the whole quote is always coloured.
-    quoteAtoms.forEach(([a, b]) => { if (free({ a, b })) claim({ a, b, s: 99 }); });
-
-    const contentCount = score.filter(s => s > 0).length || N;
-
-    // Greedy, but re-scored each round so the picks spread out and don't repeat
-    // the same word twice — that's the difference between this and a ranked list.
-    while (taken.length < cfg.max) {
-      if (taken.length >= cfg.min && covered / contentCount >= cfg.cover) break;
-      let best = null, bestS = -Infinity;
-      for (const c of cands) {
-        if (!free(c)) continue;
-        let s = c.s;
-        let repeats = 0;
-        for (let k = c.a; k <= c.b; k++) if (core[k] && usedWords.has(core[k])) repeats++;
-        s -= repeats * 3;                                       // don't say the same thing twice
-        const mid = (c.a + c.b) / 2;
-        for (const t of taken) if (Math.abs(mid - (t.a + t.b) / 2) / N < 0.18) s -= 2.5;
-        if (s > bestS) { bestS = s; best = c; }
-      }
-      if (!best) break;
-      claim(best);
-    }
-
-    // If the line turns on a pivot, make sure something after it is coloured.
-    if (pivotAt > -1 && !taken.some(t => t.a > pivotAt)) {
-      const after = cands.filter(c => c.a > pivotAt && free(c)).sort((x, y) => y.s - x.s)[0];
-      if (after) claim(after);
-    }
-
-    if (!taken.length && cands.length) claim(cands[0]);
-    if (!taken.length) {
-      let b = 0;
-      score.forEach((s, k) => { if (s > score[b]) b = k; });
-      claim({ a: b, b, s: 0 });
-    }
-
-    taken.forEach(c => { for (let k = c.a; k <= c.b; k++) idx[k].t.color = state.active; });
     buildPhrases();
   }
 
@@ -990,7 +814,8 @@ weapon=w*apon`;
 
   // Everything below must ignore the extension's own panel — its swatches carry
   // the exact colors we're hunting for, so an unscoped search clicks itself.
-  const mine = (el) => !!(el && el.closest && el.closest(".hh-root"));
+  // The panel, its rings on the design and its message card.
+  const mine = (el) => !!(el && el.closest && el.closest(".hh-root,.hh-layer,.hh-notice"));
   const notMine = (el) => !mine(el);
 
   // A container only counts as the Text color panel if it carries one of the
@@ -2038,40 +1863,6 @@ weapon=w*apon`;
     return out;
   }
 
-  // Prefer text we can positively identify as the headline. But on a fresh post
-  // the box still holds the *previous* headline, so a content match is
-  // impossible — that is exactly when the box most needs opening. The fallback
-  // is the largest design text inside the canvas area, which every filter in
-  // canvasTextCandidates has already vetted as non-navigational.
-  function pickTarget() {
-    const cands = canvasTextCandidates();
-    if (!cands.length) return null;
-
-    if (state.text.trim()) {
-      const want = normText(state.text).slice(0, 30);
-      if (want.length >= 12) {
-        const hits = cands.filter(c => normText(c.txt).includes(want));
-        if (hits.length) {
-          // Least extra text first: the headline box, not a container around it.
-          const L = normText(state.text).length;
-          hits.sort((a, b) => (Math.abs(normText(a.txt).length - L) - Math.abs(normText(b.txt).length - L)) || (a.off - b.off));
-          return hits[0];
-        }
-      }
-    }
-
-    // Design text is set far larger than Canva's own interface text, so a
-    // generous size floor keeps this away from menus and labels.
-    // Design text is set well above Canva's interface text. Scale the floor so
-    // this still separates the two on a small laptop screen.
-    const floor = window.innerWidth < 1200 ? 17 : 20;
-    const big = cands.filter(c => c.fs >= floor);
-    if (!big.length) return null;
-    // Nearest the middle of the view wins ties — that is the page being edited.
-    big.sort((a, b) => (a.off - b.off) || (b.fs - a.fs) || (b.area - a.area));
-    return big[0];
-  }
-
   // A real double-click fires mousedown/mouseup/click twice with a rising detail
   // count, then dblclick. Canva's handlers watch that sequence, so a lone
   // dblclick event gets ignored.
@@ -2181,20 +1972,22 @@ weapon=w*apon`;
 
   // One click selects the box, which is enough for Canva to show the text
   // toolbar and its colour button. Two clicks enter edit mode for selections.
-  async function selectTextBox(log) {
+  // target: a headline already found (resolveHeadline), so a run asks you at
+  // most once.
+  async function selectTextBox(log, target) {
     if (findColorPanel() || findColorButton()) return true;
     if (!state.autoOpenBox) return false;
-    const t = pickTarget();
+    const t = target || await resolveHeadline(log);
     if (!t) return false;
     const ok = await clickHeadline(t.n, 1, log);
     if (ok && log) log("Selected the text box starting \u201c" + t.txt.slice(0, 30).replace(/\s+/g, " ") + "\u2026\u201d");
     return ok;
   }
 
-  async function openTextBox(log) {
+  async function openTextBox(log, target) {
     if (findEditable()) return true;
     if (!state.autoOpenBox) return false;
-    const t = pickTarget();
+    const t = target || await resolveHeadline(log);
     if (!t) return false;
     const ok = await clickHeadline(t.n, 2, log);
     if (ok) log("Opened the text box starting \u201c" + t.txt.slice(0, 34).replace(/\s+/g, " ") + "\u2026\u201d");
@@ -2381,11 +2174,17 @@ weapon=w*apon`;
     if (!state.phrases.length) { log("No phrases to color."); return false; }
 
     if (!findEditable()) {
+      let target = null;
       if (state.autoOpenBox) {
         log("No text box open \u2014 looking for your headline on the page\u2026");
-        await selectTextBox(log);
+        target = await resolveHeadline(log);
+        if (!target) {
+          log("Couldn't be sure which text is the headline, so nothing was clicked.");
+          return false;
+        }
+        await selectTextBox(log, target);
       }
-      if (!(await openTextBox(log))) {
+      if (!(await openTextBox(log, target))) {
         if (!state.autoOpenBox) {
           log("Double-click your headline text box in Canva, then run again.");
           log("Or tick \u201cOpen the text box for me\u201d in the Highlight tab.");
@@ -2615,74 +2414,17 @@ weapon=w*apon`;
 
   let finished = false;
 
-  /* ---------- labelled bundle ---------- */
+  /* ---------- reading a post (engine.js does the recognising) ---------- */
 
-  const BUNDLE_KEYS = {
-    headline: "headline", title: "headline", hook: "headline", header: "headline",
-    "short headline": "headline", "main headline": "headline",
+  const bundleOf = (f) => (f && (f.headline || f.caption || (f.hashtags && f.hashtags.length)))
+    ? { headline: f.headline || "", caption: f.caption || "", tags: (f.hashtags || []).join(" ") } : null;
 
-    caption: "caption", body: "caption", story: "caption", description: "caption",
-    text: "caption", post: "caption",
-    "long caption": "caption", "short caption": "caption", "full caption": "caption",
-    "main caption": "caption", "caption long": "caption",
-
-    hashtags: "tags", hashtag: "tags", tags: "tags", tag: "tags", keywords: "tags",
-
-    // Recognised so they get cut out rather than absorbed into the caption above.
-    sources: "drop", source: "drop", references: "drop", reference: "drop",
-    credit: "drop", credits: "drop", links: "drop", link: "drop",
-    rating: "drop", rated: "drop", via: "drop"
-  };
-
-  // Some generators emit several numbered options in one paste. Split them so
-  // one option's headline can't be glued onto another's.
-  function splitOptions(text) {
-    const lines = String(text || "").replace(/\r/g, "").split("\n");
-    const marks = [];
-    lines.forEach((l, i) => {
-      const m = l.match(/^[ \t]*option[ \t]+(\d+)\b[ \t]*(.*)$/i);
-      if (m) marks.push({ at: i, n: m[1], note: (m[2] || "").replace(/^[\s:\-\u2013\u2014]+/, "").trim() });
-    });
-    if (marks.length < 2) return null;
-
-    return marks.map((mk, idx) => {
-      const end = idx + 1 < marks.length ? marks[idx + 1].at : lines.length;
-      const body = lines.slice(mk.at + 1, end);
-      // Trailing ==== rules belong to the next block, not this one.
-      while (body.length && /^[\s=*_\-]*$/.test(body[body.length - 1])) body.pop();
-      const rated = (mk.note.match(/rated[\s:]*([\d.]+\s*\/\s*\d+)/i) || [])[1] || "";
-      return { label: "Option " + mk.n, rating: rated, text: body.join("\n") };
-    });
-  }
-
-  // Accepts "Headline:" on its own line or "Headline: TSA MAY..." inline.
-  // Needs two or more known labels before it will claim the text is a bundle,
-  // so an ordinary caption containing "one rule:" is never mistaken for one.
+  // In the Tools tab, only a paste with real labels splits itself up; any
+  // other paste stays in the box you pasted it into.
   function parseBundle(text) {
-    const opts = splitOptions(text);
-    if (opts) {
-      const i = Math.min(Math.max(state.optionIndex || 0, 0), opts.length - 1);
-      text = opts[i].text;
-    }
-    const lines = String(text || "").replace(/\r/g, "").split("\n");
-    const marks = [];
-    lines.forEach((line, i) => {
-      const m = line.match(/^[ \t]*([A-Za-z][A-Za-z ]{0,18}?)[ \t]*:[ \t]*(.*)$/);
-      if (!m) return;
-      const key = BUNDLE_KEYS[m[1].trim().toLowerCase()];
-      if (key) marks.push({ key, at: i, rest: m[2] });
-    });
-    if (marks.length < 2) return null;
-
-    const out = {};
-    marks.forEach((mk, idx) => {
-      const end = idx + 1 < marks.length ? marks[idx + 1].at : lines.length;
-      if (mk.key === "drop") return;
-      const chunk = [mk.rest, ...lines.slice(mk.at + 1, end)].join("\n").trim();
-      if (!chunk) return;
-      out[mk.key] = out[mk.key] ? out[mk.key] + "\n\n" + chunk : chunk;
-    });
-    return (out.headline || out.caption) ? out : null;
+    const r = E.analyze(text, { optionIndex: state.optionIndex });
+    if (!r.ok || r.strategy !== "labels") return null;
+    return bundleOf(r);
   }
 
   function applyBundle(b) {
@@ -2718,6 +2460,731 @@ weapon=w*apon`;
     const n = bundleTagCount(b);
     if (n) bits.push(n + " hashtags");
     return bits.join(", ");
+  }
+
+  /* ---------- the detection the Studio shows ---------- */
+
+  // state.det: { key, fields: { headline, caption, hashtags[] }, meta, edited, confirmed }
+  // Fields are what you see and edit; meta says how sure, how it was found,
+  // what else it could be. A run always uses the fields as you left them.
+  const detKey = () => (state.bundle || "").trim() + "\u0000" + (state.optionIndex || 0);
+
+  function metaOf(r, from) {
+    return {
+      confidence: r.confidence, strategy: r.strategy, strategyName: r.strategyName,
+      warnings: (r.warnings || []).slice(0, 6), missing: r.missing || [],
+      candidates: (r.candidates || []).slice(0, 5).map(c => ({ text: c.text, confidence: c.confidence, why: c.why })),
+      needsConfirm: !!r.needsConfirm, reasons: r.reasons || [],
+      options: r.options ? r.options.map(o => ({ label: o.label, rating: o.rating })) : null,
+      tried: r.tried || [], ms: r.ms || 0, from: from || "text"
+    };
+  }
+
+  function detectText(opts) {
+    opts = opts || {};
+    const r = E.analyze(state.bundle, { optionIndex: state.optionIndex, exclude: opts.exclude, avoid: opts.avoid });
+    state.det = { key: detKey(), fields: E.fieldsOf(r), meta: metaOf(r, "text"), edited: {}, confirmed: !r.needsConfirm };
+    store.save();
+    return state.det;
+  }
+
+  function currentDet() {
+    if (!state.bundle.trim()) return state.det && state.det.meta && state.det.meta.from === "page" ? state.det : null;
+    if (!state.det || state.det.key !== detKey()) detectText();
+    return state.det;
+  }
+
+  function quickBundle() {
+    const d = currentDet();
+    return d ? bundleOf(d.fields) : null;
+  }
+
+  // Smart Detect with an empty source: the headline on the open page (ranked,
+  // with the same confidence rules as everything else) and the caption in
+  // Notes, if Notes is open. Nothing on the design is clicked to read it.
+  function detectFromPage() {
+    const t0 = performance.now();
+    const rk = rankOnPage(state.text || "");
+    const warnings = [];
+    let headline = "", hc = 0, cands = [], reasons = [];
+    if (rk.top) {
+      headline = (rk.top.cand.n.innerText || rk.top.text).replace(/ /g, " ").replace(/[ \t]+\n/g, "\n").trim();
+      hc = rk.confidence;
+      reasons = rk.top.why.slice(0, 3);
+      cands = rk.ranked.slice(0, 5).map(r => ({ text: r.text, confidence: r.confidence, why: r.why.slice(0, 3) }));
+    } else warnings.push("No text on this page reads like a headline");
+    let caption = "", tags = [], cc = 0;
+    const ned = findNotesEditor();
+    if (ned && readEd(ned).trim()) {
+      const nr = E.analyze("Caption:\n" + readEd(ned));
+      caption = nr.caption; tags = nr.hashtags; cc = caption ? 0.9 : 0;
+    } else warnings.push("Open Canva's Notes to read the caption from the design too");
+    const conf = { headline: round2(hc), caption: cc, hashtags: tags.length ? 0.9 : 0, overall: 0 };
+    const parts = [[conf.headline, 0.5, headline], [conf.caption, 0.35, caption], [conf.hashtags, 0.15, tags.length]].filter(p => p[2]);
+    const w = parts.reduce((a, p) => a + p[1], 0);
+    conf.overall = w ? round2(parts.reduce((a, p) => a + p[0] * p[1], 0) / w) : 0;
+    const need = headline && hc < confNeed();
+    state.det = {
+      key: "page",
+      fields: { headline, caption, hashtags: tags },
+      meta: { confidence: conf, strategy: "design", strategyName: "Design", warnings, reasons,
+        missing: ["headline", "caption", "hashtags"].filter(k => k === "hashtags" ? !tags.length : !({ headline, caption })[k]),
+        candidates: cands, needsConfirm: !!need, options: null, tried: [{ strategy: "design", ok: !!headline }],
+        ms: round2(performance.now() - t0), from: "page" },
+      edited: {}, confirmed: !need
+    };
+    if (rk.top) showRing(rk.top.cand.n, need ? "ask" : "found", 1800, need ? null : "Headline · " + pct(hc));
+    store.save();
+    return state.det;
+  }
+
+  const round2 = (x) => Math.round((x || 0) * 100) / 100;
+
+  /* ---------- which text on the design is the headline ---------- */
+
+  // How sure the panel must be before it acts without asking.
+  const CONF_LEVELS = { careful: 0.75, balanced: 0.6, relaxed: 0.45 };
+  const confNeed = () => CONF_LEVELS[state.confLevel] || CONF_LEVELS.balanced;
+  let confirmedEl = null;      // the box you pointed out, for the rest of this visit
+
+  function lineCount(el) {
+    try {
+      const rg = document.createRange();
+      rg.selectNodeContents(el);
+      const tops = [];
+      [...rg.getClientRects()].forEach(r => {
+        if (r.width > 2 && r.height > 2 && !tops.some(t => Math.abs(t - r.top) < r.height * 0.5)) tops.push(r.top);
+      });
+      return Math.max(1, tops.length);
+    } catch (e) { return 1; }
+  }
+
+  function handleRects() {
+    const notes = findNotesPanel();
+    return leafs(document.body)
+      .filter(e => (!notes || !notes.contains(e)) && /^@[\w.]{2,}$/.test((e.textContent || "").trim()))
+      .map(e => e.getBoundingClientRect()).filter(r => r.width >= 10 && r.height >= 4);
+  }
+
+  // Each text box on screen, described the way the ranking needs it.
+  function pageCandidates() {
+    const hs = handleRects();
+    const all = canvasTextCandidates();
+    return all.map(c => {
+      const tr = textRect(c.n);
+      const below = hs.filter(r => {
+        const ov = Math.min(r.right, tr.right) - Math.max(r.left, tr.left);
+        return ov >= Math.min(r.width, tr.width) * 0.5 && r.top >= tr.bottom - 4;
+      }).sort((a, b) => a.top - b.top)[0];
+      const gap = below ? below.top - tr.bottom : Infinity;
+      return {
+        n: c.n, text: c.txt, fontSize: c.fs, offCenter: c.off, lines: lineCount(c.n),
+        colours: colourCount(c.n),
+        aboveHandle: !!below && gap < Math.max(160, below.height * 8),
+        container: all.some(o => o !== c && c.n.contains(o.n)),
+        editing: !!(c.n.isContentEditable || c.n.closest('[contenteditable="true"]'))
+      };
+    });
+  }
+
+  function rankOnPage(want) {
+    const rk = E.rankHeadlines(pageCandidates(), {
+      want: want || "", last: state.lastPost && state.lastPost.text || "", profile: state.hlProfile
+    });
+    // The box you pointed out on this page wins while it's still there.
+    if (confirmedEl && confirmedEl.isConnected) {
+      const hit = rk.ranked.find(r => r.cand.n === confirmedEl || confirmedEl.contains(r.cand.n) || r.cand.n.contains(confirmedEl));
+      if (hit) {
+        rk.ranked.splice(rk.ranked.indexOf(hit), 1);
+        rk.ranked.unshift(hit);
+        rk.top = hit;
+        rk.confidence = Math.max(rk.confidence, 0.96);
+        if (hit.why[0] !== "you pointed it out") hit.why.unshift("you pointed it out");
+      }
+    }
+    return rk;
+  }
+
+  function rememberHeadline(pick, rk) {
+    confirmedEl = pick.cand.n;
+    const maxFont = Math.max(1, ...rk.ranked.map(r => +r.cand.fontSize || 0));
+    state.hlProfile = E.learnProfile(state.hlProfile, pick.cand, maxFont);
+    store.save();
+  }
+
+  // The headline box to work on. Sure enough: use it. Not sure: show the best
+  // guess on the design and ask, unless asking is off. mode "strict" never
+  // asks and gives up instead; mode "any" takes the best guess.
+  async function resolveHeadline(log, opts) {
+    opts = opts || {};
+    const rk = rankOnPage(opts.want != null ? opts.want : (state.text || ""));
+    if (!rk.top) return null;
+    const sure = rk.confidence >= confNeed();
+    if (sure || !state.askConfirm || opts.mode === "any") {
+      if (log) log("Headline on the page: “" + short(rk.top.text) + "” (" + pct(rk.confidence) + " sure"
+        + (rk.top.why.length ? " — " + rk.top.why.slice(0, 2).join(", ") : "") + ").");
+      return { n: rk.top.cand.n, txt: rk.top.text, confidence: rk.confidence, why: rk.top.why };
+    }
+    if (opts.mode === "strict") {
+      if (log) log("Not sure which text is the headline (" + pct(rk.confidence) + ") — left the design alone.");
+      return null;
+    }
+    if (log) log("Not sure which text is the headline (" + pct(rk.confidence) + ") — asking you.");
+    const pick = await askWhichHeadline(rk);
+    if (!pick) { if (log) log("You cancelled — nothing on the design was changed."); return null; }
+    rememberHeadline(pick, rk);
+    if (log) log("You pointed out the headline: “" + short(pick.text) + "”. I'll remember this layout.");
+    return { n: pick.cand.n, txt: pick.text, confidence: 1, why: ["you pointed it out"] };
+  }
+
+  /* ---------- rings on the design ---------- */
+
+  // A layer of its own, outside the panel, that clicks pass straight through.
+  let layer = null;
+  function ensureLayer() {
+    if (!layer || !layer.isConnected) {
+      layer = document.createElement("div");
+      layer.className = "hh-layer";
+      layer.style.setProperty("--acc", firstStop(state.active) || "#FFC93C");
+      document.documentElement.appendChild(layer);
+    }
+    layer.style.setProperty("--acc", firstStop(state.active) || "#FFC93C");
+    return layer;
+  }
+
+  // The text's own lines, so the ring sits exactly on the words at any zoom.
+  function lineRects(el) {
+    const out = [];
+    try {
+      const rg = document.createRange();
+      rg.selectNodeContents(el);
+      [...rg.getClientRects()].forEach(r => {
+        if (r.width < 2 || r.height < 2) return;
+        const row = out.find(o => Math.abs(o.top - r.top) < r.height * 0.5);
+        if (row) { row.left = Math.min(row.left, r.left); row.right = Math.max(row.right, r.right); row.top = Math.min(row.top, r.top); row.bottom = Math.max(row.bottom, r.bottom); }
+        else out.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+      });
+    } catch (e) {}
+    if (!out.length) { const r = el.getBoundingClientRect(); out.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }); }
+    return out.slice(0, 12);
+  }
+
+  let ringTimer = null, ringTrack = null;
+  function clearRing() {
+    clearTimeout(ringTimer);
+    clearInterval(ringTrack);
+    ringTrack = null;
+    if (!layer) return;
+    const old = layer.querySelector(".hh-ring");
+    if (old) { old.classList.add("out"); setTimeout(() => old.remove(), 260); }
+  }
+
+  // kind: "found" (soft), "ask" (pulsing, waits), "done" (a glow after colouring)
+  function showRing(el, kind, ms, label) {
+    if (!el || !el.isConnected) return;
+    clearRing();
+    const L = ensureLayer();
+    const ring = document.createElement("div");
+    ring.className = "hh-ring " + (kind || "found");
+    L.appendChild(ring);
+    // Built once; each redraw only moves the pieces, so the entrance motion
+    // plays once and the ring never flickers while it follows the text.
+    const frame = document.createElement("div");
+    frame.className = "hh-ringbox";
+    ring.appendChild(frame);
+    const lines = [];
+    let tag = null;
+    if (label) {
+      tag = document.createElement("div");
+      tag.className = "hh-ringtag";
+      tag.textContent = label;
+      ring.appendChild(tag);
+    }
+    const place = (n, r) => Object.assign(n.style, { left: r.left + "px", top: r.top + "px", width: (r.right - r.left) + "px", height: (r.bottom - r.top) + "px" });
+    const draw = () => {
+      if (!el.isConnected) { clearRing(); return; }
+      const rs = lineRects(el);
+      const box = rs.reduce((a, r) => ({ left: Math.min(a.left, r.left), right: Math.max(a.right, r.right), top: Math.min(a.top, r.top), bottom: Math.max(a.bottom, r.bottom) }),
+        { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity });
+      const pad = 6;
+      place(frame, { left: box.left - pad, top: box.top - pad, right: box.right + pad, bottom: box.bottom + pad });
+      while (lines.length < rs.length) {
+        const ln = document.createElement("div");
+        ln.className = "hh-ringline";
+        ln.style.setProperty("--i", lines.length);
+        ring.insertBefore(ln, tag);
+        lines.push(ln);
+      }
+      while (lines.length > rs.length) lines.pop().remove();
+      rs.forEach((r, i) => place(lines[i], { left: r.left - 2, top: r.top - 1, right: r.right + 2, bottom: r.bottom + 1 }));
+      if (tag) {
+        tag.style.left = (box.left - pad) + "px";
+        tag.style.top = Math.max(4, box.top - pad - 24) + "px";
+      }
+      ring.dataset.box = [box.left, box.top, box.right, box.bottom].map(Math.round).join(",");
+    };
+    draw();
+    // Follow the text if Canva scrolls or zooms while the ring is up.
+    ringTrack = setInterval(draw, 160);
+    if (ms) ringTimer = setTimeout(clearRing, ms);
+    return ring;
+  }
+
+  function ringHeadline(kind) {
+    const e = headlineEl();
+    if (e) showRing(e, kind || "done", 1600);
+  }
+
+  // Shows the best guess on the design and asks. "Not this" moves to the next
+  // guess. Resolves with the ranked entry you chose, or null.
+  let pendingAsk = null;
+  function askWhichHeadline(rk, startAt) {
+    if (pendingAsk) pendingAsk.cancel();
+    const list = rk.ranked.filter(r => r.score > -6).slice(0, 6);
+    if (!list.length) return Promise.resolve(null);
+    let i = Math.min(startAt || 0, list.length - 1);
+    return new Promise((resolve) => {
+      const L = ensureLayer();
+      const card = document.createElement("div");
+      card.className = "hh-askcard";
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-label", "Is this the headline?");
+      L.appendChild(card);
+      const finish = (v) => {
+        if (!pendingAsk) return;
+        pendingAsk = null;
+        window.removeEventListener("keydown", onKey, true);
+        card.classList.add("out");
+        setTimeout(() => card.remove(), 220);
+        if (v) showRing(v.cand.n, "found", 1200, "Headline");
+        else clearRing();
+        resolve(v);
+        paintAskPreview();
+      };
+      // Below, above, right or left of the ring: whichever covers the least
+      // of the other candidates and of the panel.
+      const place = () => {
+        const b = (card._box || "").split(",").map(Number);
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const w = card.offsetWidth || 300, h = card.offsetHeight || 120;
+        const avoid = list.filter((c, k) => k !== i && c.cand.n.isConnected).map(c => c.cand.n.getBoundingClientRect());
+        if (root) avoid.push(root.getBoundingClientRect());
+        const clampX = (x) => Math.max(8, Math.min(x, vw - w - 8));
+        const clampY = (y) => Math.max(8, Math.min(y, vh - h - 8));
+        const spots = [
+          { left: clampX(b[0]), top: b[3] + 16 },
+          { left: clampX(b[0]), top: b[1] - h - 34 },
+          { left: b[2] + 16, top: clampY(b[1]) },
+          { left: b[0] - w - 16, top: clampY(b[1]) }
+        ];
+        const own = { left: b[0], top: b[1], right: b[2], bottom: b[3] };
+        const cost = (p) => {
+          if (p.left < 4 || p.top < 4 || p.left + w > vw - 4 || p.top + h > vh - 4) return Infinity;
+          let c = 0;
+          avoid.concat([own]).forEach((r, k) => {
+            const ox = Math.min(p.left + w, r.right) - Math.max(p.left, r.left);
+            const oy = Math.min(p.top + h, r.bottom) - Math.max(p.top, r.top);
+            if (ox > 0 && oy > 0) c += ox * oy * (k === avoid.length ? 4 : 1);
+          });
+          return c;
+        };
+        let best = null, bc = Infinity;
+        spots.forEach(p => { const c = cost(p); if (c < bc) { bc = c; best = p; } });
+        if (!best) best = { left: clampX(b[0]), top: clampY(b[3] + 16) };
+        card.style.left = Math.round(best.left) + "px";
+        card.style.top = Math.round(best.top) + "px";
+      };
+      const show = () => {
+        const c = list[i];
+        const ring = showRing(c.cand.n, "ask", 0, (i === 0 ? "Best guess" : "Option " + (i + 1)) + " · " + pct(c.confidence));
+        card._box = ring ? ring.dataset.box : "0,0,0,0";
+        card.innerHTML = "";
+        const t = document.createElement("div");
+        t.className = "hh-askcardtitle";
+        t.textContent = "Is this the headline?";
+        card.appendChild(t);
+        const q = document.createElement("div");
+        q.className = "hh-askcardtext";
+        q.textContent = "“" + c.text.slice(0, 90) + (c.text.length > 90 ? "…" : "") + "”";
+        card.appendChild(q);
+        if (c.why.length) {
+          const w = document.createElement("div");
+          w.className = "hh-askcardwhy";
+          w.textContent = c.why.slice(0, 3).join(" · ");
+          card.appendChild(w);
+        }
+        const row = document.createElement("div");
+        row.className = "hh-askcardrow";
+        const mk = (label, cls, fn) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "hh-cbtn " + cls;
+          b.textContent = label;
+          b.onclick = (e) => { e.stopPropagation(); fn(); };
+          row.appendChild(b);
+          return b;
+        };
+        const yes = mk("Yes, this one", "primary", () => finish(list[i]));
+        if (list.length > 1) mk("Not this →", "", () => { i = (i + 1) % list.length; show(); });
+        mk("Cancel", "ghost", () => finish(null));
+        card.appendChild(row);
+        const n = document.createElement("div");
+        n.className = "hh-askcardfoot";
+        n.textContent = (i + 1) + " of " + list.length + " · Enter = yes, → = next, Esc = cancel";
+        card.appendChild(n);
+        requestAnimationFrame(place);
+        setTimeout(() => yes.focus({ preventScroll: true }), 30);
+      };
+      const onKey = (e) => {
+        if (!e.isTrusted || !pendingAsk) return;
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(null); }
+        else if (e.key === "ArrowRight" && list.length > 1) { e.preventDefault(); e.stopPropagation(); i = (i + 1) % list.length; show(); }
+      };
+      window.addEventListener("keydown", onKey, true);
+      pendingAsk = { yes: () => finish(list[i]), next: () => { i = (i + 1) % list.length; show(); }, cancel: () => finish(null) };
+      show();
+      paintAskPreview();
+    });
+  }
+
+  /* ---------- carrying out a plan ---------- */
+
+  // What the last instruction did, so follow-ups ("copy it", "not that one")
+  // know what "it" is.
+  let askCtx = { lastPlan: null, lastOp: null, lastFields: null, lastFailed: false, lastSurface: "text" };
+  let askBusy = false;
+  const ALL_FIELDS = ["headline", "caption", "hashtags"];
+  const fieldWord = (f) => f.length === 3 ? "headline, caption and hashtags"
+    : f.length === 2 ? f[0] + " and " + f[1] : f[0];
+  const hasField = (fields, f) => f === "hashtags" ? !!(fields.hashtags && fields.hashtags.length) : !!(fields[f] && String(fields[f]).trim());
+
+  async function writeClipboard(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.className = "hh-hidden";
+      ta.setAttribute("readonly", "");
+      root.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return !!ok;
+    } catch (e) { return false; }
+  }
+
+  // Detection the step can use: the source, or the design when the source is
+  // empty (or you asked for the design).
+  function ensureDetected(opts) {
+    opts = opts || {};
+    if (opts.from === "page" || (!state.bundle.trim() && state.readPage)) return detectFromPage();
+    if (!state.bundle.trim()) return null;
+    if (opts.force) return detectText();
+    return currentDet();
+  }
+
+  async function execStep(s) {
+    const d0 = state.det;
+    switch (s.op) {
+      case "detect":
+      case "extract": {
+        const d = ensureDetected({ from: s.from, force: s.force || s.from === "page" || s.op === "detect" });
+        paintDetection(true);
+        if (!d) return { ok: false, text: "Nothing to read — paste a post into Source, or open a design with a headline." };
+        const want = s.fields || ALL_FIELDS;
+        const got = want.filter(f => hasField(d.fields, f)), miss = want.filter(f => !hasField(d.fields, f));
+        got.forEach(flashField);
+        if (!got.length) return { ok: false, text: "No " + fieldWord(miss) + " found" + (d.meta.from === "page" ? " on the design." : " in the source.") };
+        let text = (s.op === "detect" ? "Detected " : "Extracted ") + fieldWord(got) + " — " + pct(d.meta.confidence.overall) + " sure, by " + String(d.meta.strategyName).toLowerCase();
+        if (miss.length) text += ". No " + fieldWord(miss) + " in it";
+        if (s.op === "extract" && (got.includes("headline") || got.includes("caption"))) {
+          applyBundle(bundleOf({ headline: got.includes("headline") ? d.fields.headline : "", caption: got.includes("caption") ? d.fields.caption : "",
+            hashtags: got.includes("hashtags") || got.includes("caption") ? d.fields.hashtags : [] }));
+          text += ". Ready in Tools" + (got.includes("headline") && state.phrases.length ? " with " + state.phrases.length + " phrases picked" : "");
+        }
+        if (d.meta.needsConfirm && !d.confirmed && got.includes("headline")) {
+          return { ok: "part", text: text + ". The headline needs your OK — see Detected.", surface: d.meta.from, fields: got };
+        }
+        return { ok: miss.length ? "part" : true, text: text + ".", surface: d.meta.from, fields: got };
+      }
+      case "copy": {
+        const d = ensureDetected({});
+        if (!d) return { ok: false, text: "Nothing to copy — paste a post into Source first." };
+        const want = s.fields || ALL_FIELDS;
+        const got = want.filter(f => hasField(d.fields, f)), miss = want.filter(f => !hasField(d.fields, f));
+        if (!got.length) return { ok: false, text: "Nothing copied — no " + fieldWord(miss) + " was found.", fields: want };
+        const txt = E.copyText(d.fields, got);
+        const ok = await writeClipboard(txt);
+        if (!ok) return { ok: false, text: "Chrome refused the clipboard. Click into the panel and try again.", fields: got };
+        return { ok: miss.length ? "part" : true, text: "Copied the " + fieldWord(got) + " (" + txt.length.toLocaleString() + " characters)"
+          + (miss.length ? " — no " + fieldWord(miss) + " to copy." : "."), fields: got };
+      }
+      case "highlight": {
+        if (running) return { ok: false, text: "A run is going — wait for it to finish." };
+        const r = await highlightHeadline();
+        return Object.assign({ surface: "page", fields: ["headline"] }, r);
+      }
+      case "locate": {
+        const d = currentDet();
+        const want = (d && d.fields.headline) || state.text || "";
+        const rk = rankOnPage(want);
+        if (!rk.top) return { ok: false, text: "No text on this page reads like a headline.", surface: "page" };
+        if (rk.confidence >= confNeed()) {
+          showRing(rk.top.cand.n, "found", 2400, "Headline · " + pct(rk.confidence));
+          return { ok: true, text: "Headline found — " + pct(rk.confidence) + " sure: " + rk.top.why.slice(0, 2).join(", ") + ".", surface: "page", fields: ["headline"] };
+        }
+        const pick = await askWhichHeadline(rk);
+        if (!pick) return { ok: false, text: "Cancelled — nothing was changed.", surface: "page" };
+        rememberHeadline(pick, rk);
+        return { ok: true, text: "Got it — that's the headline. I'll remember this layout.", surface: "page", fields: ["headline"] };
+      }
+      case "reanalyze": {
+        if ((s.surface || askCtx.lastSurface) === "page" && (state.bundle.trim() === "" || askCtx.lastOp === "highlight" || askCtx.lastOp === "locate")) {
+          const rk = rankOnPage(state.text || "");
+          if (!rk.top) return { ok: false, text: "No text on this page to choose from.", surface: "page" };
+          // Start from the next guess: you said the last one was wrong.
+          const cur = confirmedEl || (rk.top && rk.top.cand.n);
+          const at = Math.max(0, rk.ranked.findIndex(r => r.cand.n !== cur));
+          const pick = await askWhichHeadline(rk, at);
+          if (!pick) return { ok: false, text: "Cancelled — nothing was changed.", surface: "page" };
+          rememberHeadline(pick, rk);
+          if (!state.bundle.trim()) detectFromPage();
+          paintDetection(true);
+          return { ok: true, text: "Switched to “" + short(pick.text) + "”.", surface: "page", fields: ["headline"] };
+        }
+        if (!state.bundle.trim()) {
+          if (!state.readPage) return { ok: false, text: "Nothing to look at again — the source is empty." };
+          const d = detectFromPage();
+          paintDetection(true);
+          return { ok: !!d.fields.headline, text: d.fields.headline ? "Read the design again — " + pct(d.meta.confidence.headline) + " sure of the headline." : "Still no headline on this page." };
+        }
+        const before = currentDet();
+        const prevHead = before ? before.fields.headline : "";
+        const prevStrat = before ? before.meta.strategy : "";
+        let next = detectText({ exclude: prevStrat && prevStrat !== "semantic" ? [prevStrat] : [], avoid: prevHead ? [prevHead] : [] });
+        if (!next.fields.headline && !next.fields.caption) next = detectText({ avoid: prevHead ? [prevHead] : [] });
+        paintDetection(true);
+        paintStages();
+        if (!next.fields.headline && !next.fields.caption) {
+          detectText();
+          paintDetection(true);
+          return { ok: false, text: "Looked again every way — nothing better than the first reading, so that's back." };
+        }
+        if (E.similarity(next.fields.headline, prevHead) > 0.98 && E.similarity(next.fields.caption, before ? before.fields.caption : "") > 0.98) {
+          return { ok: "info", text: "Looked again by " + String(next.meta.strategyName).toLowerCase() + " — same result. It's the best match there is." };
+        }
+        flashField("headline");
+        if (!next.fields.headline) {
+          return { ok: "part", text: "Looked again by " + String(next.meta.strategyName).toLowerCase() + ": no other line reads like a headline, so that line now counts as part of the text and the headline is empty. Type it under Detected if there is one." };
+        }
+        next.confirmed = false;
+        next.meta.needsConfirm = true;
+        return { ok: "part", text: "Read it again by " + String(next.meta.strategyName).toLowerCase() + ": the headline is now “" + short(next.fields.headline) + "”. Check it under Detected." };
+      }
+      case "pick": {
+        const d = currentDet();
+        const c = d && d.meta.candidates;
+        if (!c || c.length < 2) return { ok: false, text: "There are no other headline candidates to pick from." };
+        const k = s.n === -1 ? c.length - 1 : s.n - 1;
+        if (k < 0 || k >= c.length) return { ok: false, text: "There are only " + c.length + " candidates." };
+        useCandidate(c[k].text);
+        return { ok: true, text: "Using candidate " + (k + 1) + ": “" + short(c[k].text) + "”.", fields: ["headline"] };
+      }
+      case "option": {
+        const d = currentDet();
+        const o = d && d.meta.options;
+        if (!o || o.length < 2) return { ok: false, text: "The source has only one option." };
+        const k = s.n === -1 ? o.length - 1 : s.n - 1;
+        if (k < 0 || k >= o.length) return { ok: false, text: "There are only " + o.length + " options." };
+        state.optionIndex = k;
+        detectText();
+        paintDetection(true);
+        paintStages();
+        return { ok: true, text: "Switched to " + o[k].label + (o[k].rating ? " (" + o[k].rating + ")" : "") + "." };
+      }
+      case "confirm": {
+        if (pendingAsk) { pendingAsk.yes(); return { ok: true, text: "Confirmed." }; }
+        const d = currentDet();
+        if (d && !d.confirmed) { d.confirmed = true; store.save(); paintDetection(); paintStages(); return { ok: true, text: "Headline confirmed." }; }
+        return { ok: "info", text: "Nothing is waiting for a yes." };
+      }
+      case "set": {
+        let d = currentDet();
+        if (!d) { state.det = d = { key: state.bundle.trim() ? detKey() : "page", fields: { headline: "", caption: "", hashtags: [] }, meta: metaOf(E.analyze(""), state.bundle.trim() ? "text" : "page"), edited: {}, confirmed: true }; }
+        if (s.field === "hashtags") d.fields.hashtags = E.hashtags(s.value.split(/[\s,]+/).map(w => w.startsWith("#") ? w : "#" + w).join(" "));
+        else d.fields[s.field] = s.value;
+        d.edited[s.field] = true;
+        if (s.field === "headline") d.confirmed = true;
+        store.save();
+        paintDetection(true);
+        paintStages();
+        flashField(s.field);
+        return { ok: true, text: "Set the " + s.field + ".", fields: [s.field] };
+      }
+      case "run": {
+        if (running) return { ok: false, text: "A run is already going." };
+        const r = await runQuick();
+        if (!r) return { ok: false, text: "Didn't start — " + (quickBundle() ? "check the headline under Detected." : "there's nothing to run.") };
+        return { ok: r.kind === "done" ? true : r.kind === "part" ? "part" : false, text: r.text + ".", surface: "page" };
+      }
+      case "notes": {
+        const d = ensureDetected({});
+        if (!d || !(d.fields.caption || (d.fields.hashtags || []).length)) return { ok: false, text: "No caption to put in Notes." };
+        applyBundle(bundleOf({ headline: "", caption: d.fields.caption, hashtags: d.fields.hashtags }));
+        if (running) return { ok: false, text: "A run is going — wait for it to finish." };
+        let ok = false;
+        await withBusy("hh-notes", "Sending…", "Send to Notes", async () => {
+          await clearLeftPanel(log, { keepNotes: true });
+          ok = await withRetry(() => coreNotes(), log, "Notes", { keepNotes: true });
+        });
+        return { ok, text: ok ? "The caption is in Notes — checked line by line." : "Notes didn't take it. It's on your clipboard — paste it into Notes.", surface: "page" };
+      }
+      case "lineup": case "fill": case "photo": case "undo": {
+        const id = { lineup: "align", fill: "fillphoto", photo: "adjust", undo: "undoalign" }[s.op];
+        const r = await runPhotoTool(id);
+        return { ok: !!(r && r.ok), text: (r && r.msg ? r.msg : "Didn't finish") + ".", surface: "page" };
+      }
+      case "censor": {
+        const d = ensureDetected({});
+        if (!d) return { ok: false, text: "Nothing to censor." };
+        const before = censoredWords([d.fields.headline, d.fields.caption, d.fields.hashtags.join(" ")].join(" "));
+        d.fields.headline = applyCensor(d.fields.headline, state.censorMap);
+        d.fields.caption = applyCensor(d.fields.caption, state.censorMap);
+        d.fields.hashtags = d.fields.hashtags.map(t => applyCensor(t, state.censorMap));
+        const n = censoredWords([d.fields.headline, d.fields.caption, d.fields.hashtags.join(" ")].join(" ")) - before;
+        store.save();
+        paintDetection();
+        return { ok: true, text: n > 0 ? "Censored " + n + " word" + (n === 1 ? "" : "s") + "." : "Nothing needed censoring." };
+      }
+      case "clear": {
+        clearAll();
+        render();
+        return { ok: true, text: "Cleared — ready for the next post." };
+      }
+      case "update": {
+        await checkUpdates(false);
+        const ph = updPhase();
+        if (ph === "ready") return { ok: true, text: "Version " + upd.last.latest + " is ready — open Updates to see what's new." };
+        if (ph === "current") return { ok: true, text: "You're up to date (version " + INSTALLED + ")." };
+        return { ok: false, text: UPD_PROBLEMS[updMsg && updMsg.why] || UPD_PROBLEMS.error };
+      }
+      case "strength": {
+        state.strength = s.level;
+        if (state.text.trim()) { if (!state.tokens.length) state.tokens = tokenize(state.text); autoPick(); }
+        store.save();
+        return { ok: true, text: "Highlights set to " + s.level + (state.phrases.length ? " — " + state.phrases.length + " phrases picked." : ".") };
+      }
+      case "automation": {
+        if (!!state.autoMode !== !!s.on) setAutomation(!!s.on);
+        return { ok: true, text: "Automation is " + (s.on ? "on." : "off.") };
+      }
+      case "repeat": {
+        const out = [];
+        for (const p of s.plan || []) out.push(await execStep(p));
+        const ok = out.every(r => r.ok === true) ? true : out.some(r => r.ok) ? "part" : false;
+        return { ok, text: out.map(r => r.text).join(" ") };
+      }
+      case "help":
+        return { ok: "info", text: "Say what you want in your own words: get everything, grab the headline, copy the caption and hashtags, highlight the title, where is the headline, fix the selection, use option 2, run it, check for updates." };
+      default:
+        void d0;
+        return { ok: false, text: "That step isn't something I can do yet." };
+    }
+  }
+
+  // Runs steps in order and reports exactly what happened, step by step.
+  async function runSteps(steps, opts) {
+    opts = opts || {};
+    askBusy = true;
+    askOut = { kind: "info", title: opts.title || "Working…", lines: [], busy: true };
+    if (!opts.quiet) paintAskOut();
+    const lines = [];
+    let surface = askCtx.lastSurface, fields = null, lastOp = null;
+    try {
+      for (const s of steps) {
+        let r;
+        try { r = await execStep(s); }
+        catch (e) { r = { ok: false, text: "Error: " + (e && e.message ? e.message : String(e)) }; }
+        lines.push({ ok: r.ok, text: r.text });
+        if (r.surface) surface = r.surface;
+        if (r.fields) fields = r.fields;
+        if (!["confirm", "help", "repeat"].includes(s.op)) lastOp = s.op;
+        askOut.lines = lines.slice();
+        if (!opts.quiet) paintAskOut();
+      }
+    } finally {
+      askBusy = false;
+    }
+    const good = lines.filter(l => l.ok === true || l.ok === "info").length;
+    const kind = !lines.length ? "fail" : good === lines.length ? (lines.every(l => l.ok === "info") ? "info" : "done")
+      : lines.some(l => l.ok) ? "part" : "fail";
+    askCtx = {
+      lastPlan: steps.filter(s => s.op !== "repeat"), lastOp: lastOp || askCtx.lastOp,
+      lastFields: fields || askCtx.lastFields, lastFailed: kind === "fail" || kind === "part", lastSurface: surface || "text"
+    };
+    askOut = { kind, title: opts.title || (kind === "done" ? "Done" : kind === "part" ? "Partly done" : kind === "info" ? "Note" : "Didn't work"), lines };
+    if (opts.quiet) {
+      // The buttons report in the card beside the panel instead.
+      notify(kind === "done" ? "done" : kind === "info" ? "info" : kind === "part" ? "part" : "fail", lines.map(l => l.text).join(" "));
+      askOut = null;
+    } else {
+      paintAskOut();
+      if (kind === "done") chime("done");
+    }
+    paintAskPreview();
+    return { kind, lines };
+  }
+
+  async function runAsk(text) {
+    const plan = IN.parse(text, askContext());
+    if (!plan.understood) {
+      askOut = { kind: "fail", title: "I didn't understand “" + text.slice(0, 40) + "”", lines: [{ ok: "info", text: "Try one of these, or say it another way:" }],
+        suggest: ["Get everything", "Copy the caption", "Highlight the headline", "Fix the selection"] };
+      paintAskOut();
+      return;
+    }
+    await runSteps(plan.steps, { title: plan.summary });
+  }
+
+  // Highlight Headline: the detected headline, found on the design, checked,
+  // then coloured and checked letter by letter.
+  async function highlightHeadline() {
+    if (running) return { ok: false, text: "A run is going — wait for it to finish." };
+    const d = currentDet();
+    if (d && d.meta.needsConfirm && !d.confirmed && d.fields.headline) {
+      flashField("headline");
+      return { ok: false, text: "Confirm the headline under Detected first — I'm only " + pct(d.meta.confidence.headline) + " sure of it." };
+    }
+    let headline = d && d.fields.headline ? d.fields.headline : "";
+    if (!headline && !state.text.trim()) {
+      // Nothing detected: the headline on the design is the one to colour.
+      const t = await resolveHeadline(null, { want: "" });
+      if (!t) return { ok: false, text: "Couldn't tell which text on the page is the headline, so nothing was coloured." };
+      headline = (t.n.innerText || t.txt).trim();
+    }
+    if (headline && E.similarity(headline, state.text) < 0.98) applyBundle({ headline });
+    if (!state.phrases.length) prepHeadline();
+    if (!state.phrases.length) return { ok: false, text: "The headline has no words to colour." };
+    let ok = false, lined = null, colourLog = [];
+    await withBusy("hh-set", "Working…", "Set all highlights", async () => {
+      await clearLeftPanel(log);
+      ok = await withRetry(() => coreSet(), log, "the colouring");
+      colourLog = logLines.slice();
+      if (ok && state.alignAfter) lined = await placeHeadline(log);
+    });
+    const lastProblem = (lines) => lines.slice().reverse().find(l => /couldn't|didn't|not |no text box|cancelled|isn't/i.test(l));
+    if (!ok) {
+      const why = lastProblem(colourLog);
+      return { ok: false, text: "Didn't finish colouring" + (why ? ": " + why.replace(/\.$/, "") : "") + ". Show details has the full log." };
+    }
+    ringHeadline("done");
+    const n = state.phrases.length;
+    const done = "Coloured " + n + " phrase" + (n === 1 ? "" : "s") + " — checked letter by letter.";
+    if (lined === false) {
+      const why = lastProblem(logLines.slice(colourLog.length));
+      return { ok: "part", text: done + " The line-up didn't finish" + (why ? ": " + why.replace(/\.$/, "") : "") + "." };
+    }
+    return { ok: true, text: done + (lined ? " Lined up above your @handle." : "") };
   }
 
   /* ---------- shared panel helpers ---------- */
@@ -2815,7 +3282,7 @@ weapon=w*apon`;
     const ed = findEditable();
     if (ed) return ed;
     const want = normText(state.text).slice(0, 30);
-    if (want.length < 12) return null;
+    if (want.length < 12) return confirmedEl && confirmedEl.isConnected ? confirmedEl : null;
     const hits = canvasTextCandidates().filter(c => normText(c.txt).includes(want));
     // The box holding the least extra text is the headline itself. A bigger
     // container (the whole page, with the @handle) also "contains" it, and
@@ -2823,7 +3290,9 @@ weapon=w*apon`;
     const len = normText(state.text).length;
     const extra = (c) => Math.abs(normText(c.txt).length - len);
     hits.sort((a, b) => (extra(a) - extra(b)) || (a.off - b.off));
-    return hits[0] ? hits[0].n : null;
+    if (hits[0]) return hits[0].n;
+    // The box you pointed out, if it's still on the page.
+    return confirmedEl && confirmedEl.isConnected ? confirmedEl : null;
   }
 
   // Same search, but without the on-screen requirement, so a headline that has
@@ -3717,7 +4186,7 @@ weapon=w*apon`;
     const vw = window.innerWidth, vh = window.innerHeight;
 
     const maxW = Math.max(260, vw - 16);
-    const w = Math.min((state.size && state.size.w) || 344, maxW);
+    const w = Math.min((state.size && state.size.w) || 360, maxW);
     root.style.width = w + "px";
 
     // Keep at least a grabbable strip of the header on screen.
@@ -3933,9 +4402,9 @@ weapon=w*apon`;
   }
 
   async function runPhotoTool(id, btn) {
-    if (running) { toast("Wait for the current run to finish"); return; }
+    if (running) { toast("Wait for the current run to finish"); return { ok: false, msg: "Wait for the current run to finish" }; }
     const t = ALL_TOOLS.find(x => x.id === id);
-    if (!t) return;
+    if (!t) return { ok: false, msg: "No such tool" };
     running = true;
     logClear();
     const setTool = (st) => {
@@ -3998,6 +4467,7 @@ weapon=w*apon`;
       setTimeout(() => { if (toolState.id === t.id) setTool(null); }, 1300);
       celebrate(ok ? "done" : "fail", msg);
     }
+    return { ok, msg };
   }
 
   /* ---------- view layer ---------- */
@@ -4009,9 +4479,32 @@ weapon=w*apon`;
   let confirmClear = false;
   let toolMenuOpen = false;
   let toolState = { id: null, s: null };   // pinned tool mid-run: "busy" | "ok" | "bad"
+  let sheet = null;                         // "updates" while that sheet is open
 
   const ICON_CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4l2.9 2.9 6.1-6.3"/></svg>';
   const ICON_CROSS = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>';
+
+  const IC = {
+    spark: TI('<path d="M7.6 1.8l1.35 3.55 3.55 1.35-3.55 1.35L7.6 11.6 6.25 8.05 2.7 6.7l3.55-1.35z"/><path d="M12.4 10.2l.55 1.4 1.4.55-1.4.55-.55 1.4-.55-1.4-1.4-.55 1.4-.55z"/>'),
+    extract: TI('<path d="M8 2.4v7.2M5 6.7l3 3 3-3"/><path d="M2.6 10.4v1.8a1.4 1.4 0 001.4 1.4h8a1.4 1.4 0 001.4-1.4v-1.8"/>'),
+    target: TI('<path d="M2.6 12.8h10.8" opacity=".55"/><path d="M4.3 10.4l5.9-5.9 1.9 1.9-5.9 5.9H4.3z"/><path d="M9.3 5.4l1.9 1.9"/>'),
+    copy: TI('<rect x="5.4" y="5.4" width="8.1" height="8.1" rx="1.7"/><path d="M10.6 5.4V4a1.5 1.5 0 00-1.5-1.5H4A1.5 1.5 0 002.5 4v5.1A1.5 1.5 0 004 10.6h1.4"/>'),
+    redo: TI('<path d="M13 3.4v3.4H9.6"/><path d="M12.6 6.7A5.1 5.1 0 103.1 9.6"/>'),
+    update: TI('<path d="M13.1 7.9A5.1 5.1 0 113.9 4.9"/><path d="M3.6 2.4v2.8h2.8"/><path d="M8 5.4v3.2l2 1.2"/>'),
+    send: TI('<path d="M3 8h9.4M8.8 4.4L12.4 8l-3.6 3.6"/>'),
+    chev: TI('<path d="M5.2 6.4L8 9.2l2.8-2.8"/>'),
+    warn: TI('<path d="M8 2.6l5.6 9.8H2.4z"/><path d="M8 6.7v2.4M8 11v.01"/>'),
+    info: TI('<circle cx="8" cy="8" r="5.6"/><path d="M8 7.3v3.4M8 5.3v.01"/>'),
+    x: TI('<path d="M4.6 4.6l6.8 6.8M11.4 4.6l-6.8 6.8"/>'),
+    plus: TI('<path d="M8 3.6v8.8M3.6 8h8.8"/>'),
+    back: TI('<path d="M9.8 3.8L5.6 8l4.2 4.2"/>'),
+    eye: TI('<path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8 11.9 12.2 8 12.2 1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.9"/>'),
+    empty: TI('<rect x="2.6" y="2.6" width="10.8" height="10.8" rx="2.4"/><path d="M5.2 6h5.6M5.2 8.4h3.6" opacity=".6"/>')
+  };
+
+  // The panel's mark: an H with a highlighter stroke, in your colour.
+  const LOGO = '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="1" y="1" width="18" height="18" rx="5.6" class="hh-logobg"/>'
+    + '<path d="M4.6 12.6h10.8" class="hh-logostroke"/><path d="M6.6 5.6v8.2M13.4 5.6v8.2M6.6 9.4h6.8" class="hh-logoh"/></svg>';
 
   function sw(on, onToggle, label) {
     const b = el("button", "hh-switch" + (on ? " on" : ""));
@@ -4022,6 +4515,7 @@ weapon=w*apon`;
     b.appendChild(el("span", "hh-knob"));
     b.onclick = (e) => {
       e.preventDefault();
+      e.stopPropagation();
       if (b.disabled) return;
       const next = !b.classList.contains("on");
       b.classList.toggle("on", next);
@@ -4046,19 +4540,24 @@ weapon=w*apon`;
   // view swaps, so the motion shows where you went.
   function segmented(options, current, onPick, cls) {
     const wrapEl = el("div", "hh-segmented " + (cls || ""));
+    wrapEl.setAttribute("role", "tablist");
     const ind = el("span", "hh-segind");
     wrapEl.appendChild(ind);
     const idx = Math.max(0, options.findIndex(o => o[0] === current));
     wrapEl.style.setProperty("--n", options.length);
     ind.style.transform = "translateX(" + (idx * 100) + "%)";
-    options.forEach(([v, label], i) => {
+    options.forEach(([v, label, badge], i) => {
       const b = el("button", "hh-segopt" + (v === current ? " on" : ""), label);
       b.type = "button";
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", v === current ? "true" : "false");
+      if (badge) b.appendChild(el("span", "hh-segbadge"));
       b.onclick = () => {
         if (v === current) return;
         ind.style.transform = "translateX(" + (i * 100) + "%)";
-        wrapEl.querySelectorAll(".hh-segopt").forEach(x => x.classList.remove("on"));
+        wrapEl.querySelectorAll(".hh-segopt").forEach(x => { x.classList.remove("on"); x.setAttribute("aria-selected", "false"); });
         b.classList.add("on");
+        b.setAttribute("aria-selected", "true");
         setTimeout(() => onPick(v), 170);
       };
       wrapEl.appendChild(b);
@@ -4068,7 +4567,7 @@ weapon=w*apon`;
 
   function logDisclosure(body) {
     const det = el("div", "hh-details" + (showLog ? " open" : ""));
-    const tog = el("button", "hh-linkbtn", showLog ? "Hide details" : "Show details");
+    const tog = el("button", "hh-linkbtn hh-logtoggle", showLog ? "Hide details" : "Show details");
     tog.type = "button";
     tog.onclick = () => {
       showLog = !showLog;
@@ -4084,15 +4583,61 @@ weapon=w*apon`;
     if (showLog) paintLog();
   }
 
+  function iconBtn(icon, label, onClick, cls) {
+    const b = el("button", "hh-icon" + (cls ? " " + cls : ""));
+    b.type = "button";
+    b.innerHTML = icon;
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    b.onclick = onClick;
+    return b;
+  }
+
+  // A soft ripple from where you pressed.
+  function ripple(b, e) {
+    const r = b.getBoundingClientRect();
+    const x = e && e.clientX ? e.clientX - r.left : r.width / 2, y = e && e.clientY ? e.clientY - r.top : r.height / 2;
+    b.style.setProperty("--rx", x + "px");
+    b.style.setProperty("--ry", y + "px");
+    b.classList.remove("hh-rip");
+    void b.offsetWidth;
+    b.classList.add("hh-rip");
+    setTimeout(() => b.classList.remove("hh-rip"), 620);
+  }
+
+  // Remembers which field you were typing in, so a redraw puts you back there.
+  function focusKey() {
+    const a = document.activeElement;
+    if (!root || !a || !root.contains(a) || !a.dataset || !a.dataset.key) return null;
+    let s = null, e = null;
+    try { s = a.selectionStart; e = a.selectionEnd; } catch (x) {}
+    return { key: a.dataset.key, s, e, top: a.scrollTop };
+  }
+  function restoreFocus(f) {
+    if (!f) return;
+    const n = root.querySelector('[data-key="' + f.key + '"]');
+    if (!n) return;
+    n.focus({ preventScroll: true });
+    try { if (f.s != null) n.setSelectionRange(f.s, f.e); } catch (e) {}
+    n.scrollTop = f.top;
+  }
+
   function render() {
+    const keep = focusKey();
+    const oldBody = wrap.querySelector(".hh-body");
+    const oldScroll = oldBody ? oldBody.scrollTop : 0;
     wrap.innerHTML = "";
     root.style.setProperty("--hh-accent", firstStop(state.active) || "#FFC93C");
     root.style.setProperty("--hh-accent-ink", readable(state.active));
+    root.classList.toggle("hh-is-compact", !!state.compact);
+    root.classList.toggle("hh-is-collapsed", !!state.collapsed);
 
     /* header */
     const head = el("div", "hh-head");
     const grip = el("div", "hh-grip");
-    grip.appendChild(el("span", "hh-dot"));
+    const logo = el("span", "hh-logo");
+    logo.innerHTML = LOGO;
+    grip.appendChild(logo);
     grip.appendChild(el("span", "hh-title", "Highlighter"));
     const pill = el("span", "hh-autopill", "Auto");
     pill.title = "Automation is on: stories from Claude or ChatGPT run by themselves";
@@ -4101,7 +4646,7 @@ weapon=w*apon`;
 
     const tools = el("div", "hh-headtools");
 
-    // Pinned Canva photo tools: one click each.
+    // Pinned Canva tools: one click each.
     const pins = el("div", "hh-pins");
     (state.pinnedTools || []).slice(0, 3).forEach(id => {
       const t = ALL_TOOLS.find(x => x.id === id);
@@ -4131,9 +4676,18 @@ weapon=w*apon`;
     tools.appendChild(menuBtn);
     tools.appendChild(el("span", "hh-headsep"));
 
-    const rst = el("button", "hh-icon" + (confirmClear ? " armed" : ""), "\u21ba");
+    const ph = updPhase();
+    const upBtn = iconBtn(IC.update, ph === "ready" ? "Update available — version " + upd.last.latest : "Check for updates",
+      () => { if (sheet === "updates") closeSheet(); else openUpdates(); },
+      "hh-tool hh-upbtn" + (ph === "ready" ? " has-update" : "") + (ph === "checking" ? " checking" : "") + (sheet === "updates" ? " on" : ""));
+    upBtn.id = "hh-upbtn";
+    tools.appendChild(upBtn);
+
+    const rst = el("button", "hh-icon" + (confirmClear ? " armed" : ""));
     rst.type = "button";
+    rst.innerHTML = TI('<path d="M3.2 5.2A5.1 5.1 0 1 1 2.9 9"/><path d="M2.6 2.6v2.9h2.9"/>');
     rst.title = "Clear everything for the next post";
+    rst.setAttribute("aria-label", rst.title);
     rst.onclick = () => { confirmClear = !confirmClear; toolMenuOpen = false; render(); };
     tools.appendChild(rst);
 
@@ -4145,12 +4699,14 @@ weapon=w*apon`;
     grow.title = state.compact ? "Show the full panel" : "Compact: just the status and Run, so the design stays visible";
     grow.setAttribute("aria-label", grow.title);
     grow.setAttribute("aria-pressed", state.compact ? "true" : "false");
-    grow.onclick = () => { state.compact = !state.compact; toolMenuOpen = false; store.save(); render(); };
+    grow.onclick = () => { state.compact = !state.compact; toolMenuOpen = false; sheet = null; store.save(); render(); };
     tools.appendChild(grow);
 
-    const fold = el("button", "hh-icon", state.collapsed ? "+" : "\u2013");
+    const fold = el("button", "hh-icon");
     fold.type = "button";
+    fold.innerHTML = state.collapsed ? TI('<path d="M8 3.6v8.8M3.6 8h8.8"/>') : TI('<path d="M3.6 8h8.8"/>');
     fold.title = state.collapsed ? "Expand" : "Collapse";
+    fold.setAttribute("aria-label", fold.title);
     fold.onclick = () => { state.collapsed = !state.collapsed; store.save(); render(); };
     tools.appendChild(fold);
 
@@ -4180,7 +4736,7 @@ weapon=w*apon`;
           let list = (state.pinnedTools || []).slice();
           if (list.includes(t.id)) list = list.filter(x => x !== t.id);
           else {
-            if (list.length >= 3) { toast("Three pins max \u2014 unpin one first"); return; }
+            if (list.length >= 3) { toast("Three pins max — unpin one first"); return; }
             list.push(t.id);
           }
           state.pinnedTools = list;
@@ -4204,10 +4760,10 @@ weapon=w*apon`;
 
     if (confirmClear && !state.collapsed) {
       const bar = el("div", "hh-confirm");
-      bar.appendChild(el("span", "hh-confirmtxt", "Clear the paste box, headline, caption and results?"));
+      bar.appendChild(el("span", "hh-confirmtxt", "Clear the source, the detected fields and the results?"));
       const yes = el("button", "hh-btn danger", "Clear");
       yes.type = "button";
-      yes.onclick = () => { confirmClear = false; clearAll(); render(); toast("Cleared \u2014 ready for the next post"); };
+      yes.onclick = () => { confirmClear = false; clearAll(); render(); toast("Cleared — ready for the next post"); };
       const no = el("button", "hh-btn", "Cancel");
       no.type = "button";
       no.onclick = () => { confirmClear = false; render(); };
@@ -4224,39 +4780,32 @@ weapon=w*apon`;
     wrap.appendChild(renderFooter());
     addGrips();
 
-    if (!state.compact) {
-    body.appendChild(segmented([["quick", "Quick"], ["manual", "Manual"]], state.view,
-      (v) => { state.view = v; store.save(); render(); }, "hh-mode"));
-    // A new version waiting: shown in both views, except on the Settings tab,
-    // where the Updates section already says it.
-    if (!(state.view === "manual" && state.mtab === "settings")) renderUpdateBar(body);
+    if (!["studio", "tools", "settings"].includes(state.view)) state.view = "studio";
+    if (!state.compact && !sheet) {
+      body.appendChild(segmented([["studio", "Studio"], ["tools", "Tools"], ["settings", "Settings", updateReady()]], state.view,
+        (v) => { state.view = v; store.save(); render(); }, "hh-mode"));
     }
 
     const view = el("div", "hh-view");
-    const key = state.view + ":" + (state.view === "manual" ? state.mtab : "");
-    if (key !== lastViewKey) { view.classList.add("hh-enter"); lastViewKey = key; }
+    const key = sheet ? "sheet:" + sheet : state.compact ? "compact" : state.view + ":" + (state.view === "tools" ? state.mtab : "");
+    const changed = key !== lastViewKey;
+    if (changed) { view.classList.add(sheet ? "hh-enter-sheet" : "hh-enter"); lastViewKey = key; }
     body.appendChild(view);
 
     const pillEl = root.querySelector(".hh-autopill");
     if (pillEl) pillEl.hidden = !state.autoMode;
     fitHeader();
-    if (state.compact && !state.collapsed) { renderCompact(view); }
-    else if (state.view === "quick") renderQuick(view);
-    else {
-      if (!["headline", "caption", "settings"].includes(state.mtab)) state.mtab = "headline";
-      view.appendChild(segmented(
-        [["headline", "Headline"], ["caption", "Caption"], ["settings", "Settings"]],
-        state.mtab, (v) => { state.mtab = v; store.save(); render(); }, "hh-subtabs"));
-      const inner = el("div", "hh-inner");
-      view.appendChild(inner);
-      if (state.mtab === "caption") renderCaption(inner);
-      else if (state.mtab === "settings") renderSettings(inner);
-      else renderHeadline(inner);
-    }
+    if (state.compact) renderCompact(view);
+    else if (sheet === "updates") renderUpdatesSheet(view);
+    else if (state.view === "studio") renderStudio(view);
+    else if (state.view === "settings") renderSettings(view);
+    else renderTools(view);
     applySize();
+    if (!changed) body.scrollTop = oldScroll;
+    restoreFocus(keep);
   }
 
-  /* ---------- Quick ---------- */
+  /* ---------- Studio ---------- */
 
   const STAGES = [
     { id: "censor", label: "Censor words", key: "censorOn", desc: "Headline, caption and hashtags" },
@@ -4269,60 +4818,613 @@ weapon=w*apon`;
 
   let run = null;   // { status, detail, result } for the current or last run
 
-  // No labels at all: a short single block is taken as a headline.
-  function looseBundle(text) {
-    const t = String(text || "").trim();
-    if (!t) return null;
-    if (t.length <= 320 && !/\n\s*\n/.test(t)) return { headline: t };
-    return null;
-  }
+  const DOCK = [
+    { id: "detect", label: "Smart Detect", short: "Detect", icon: IC.spark, tip: "Find the headline, caption and hashtags — in the source, or on the open design when it's empty" },
+    { id: "extract", label: "Extract All", short: "Extract", icon: IC.extract, tip: "Take all three into the Highlighter, censored and ready for Canva" },
+    { id: "highlight", label: "Highlight Headline", short: "Highlight", icon: IC.target, tip: "Find the headline on the design and colour it" },
+    { id: "copy", label: "Copy All", short: "Copy all", icon: IC.copy, tip: "Copy headline, caption and hashtags, neatly separated" },
+    { id: "retry", label: "Reanalyze", short: "Retry", icon: IC.redo, tip: "Look again with a different method" }
+  ];
 
-  function quickBundle() {
-    return parseBundle(state.bundle) || looseBundle(state.bundle);
-  }
+  function renderStudio(view) {
+    renderUpdateBar(view);
+    view.appendChild(renderAsk());
 
-  function renderQuick(view) {
-    const auto = el("div", "hh-autorow" + (state.autoMode ? " on" : ""));
-    const at = el("div", "hh-autotext");
-    at.appendChild(el("div", "hh-autotitle", "Automation"));
-    at.appendChild(el("div", "hh-autosub", state.autoMode
-      ? "On. Stories from Claude or ChatGPT go in and run by themselves."
-      : "Off. Turn on to run stories from Claude or ChatGPT by themselves."));
-    auto.appendChild(at);
-    const asw = sw(!!state.autoMode, (on) => {
-      state.autoMode = on;
-      if (on) {
-        state.autoOpenBox = true;          // automation needs to open the headline itself
-        toast("Automation on \u2014 the next story runs by itself");
-      } else {
-        stopHold();
-        toast("Automation off");
-      }
-      store.save();
-      render();
-    }, "Automation");
-    auto.appendChild(asw);
-    view.appendChild(auto);
+    const src = el("section", "hh-card hh-source");
+    const sh = el("div", "hh-cardhead");
+    sh.appendChild(el("span", "hh-cardtitle", "Source"));
+    const at = el("div", "hh-autotoggle" + (state.autoMode ? " on" : ""));
+    at.title = state.autoMode
+      ? "On: stories from Claude or ChatGPT go in and run by themselves"
+      : "Off: turn on to run stories from Claude or ChatGPT by themselves";
+    at.appendChild(el("span", "hh-autolabel", "Automation"));
+    at.appendChild(sw(!!state.autoMode, (on) => setAutomation(on), "Automation"));
+    sh.appendChild(at);
+    src.appendChild(sh);
 
     const ta = el("textarea", "hh-input hh-paste");
-    ta.placeholder = "Paste your post here \u2014\n\nHeadline:\n\u2026\n\nCaption:\n\u2026\n\nHashtags:\n#one #two";
+    ta.dataset.key = "paste";
+    ta.placeholder = "Paste a post — labelled or not.\nLeave this empty to read the open design.";
     ta.value = state.bundle;
     ta.spellcheck = false;
-    ta.oninput = () => { state.bundle = ta.value; run = null; store.save(); paintDetected(); paintStages(); };
+    ta.setAttribute("aria-label", "Source text");
+    ta.oninput = () => { state.bundle = ta.value; run = null; store.save(); scheduleDetect(); paintStages(); };
+    ta.onpaste = () => setTimeout(() => { state.bundle = ta.value; detectAndPaint(true); }, 0);
     ta.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); runQuick(); } };
-    view.appendChild(ta);
-
+    src.appendChild(ta);
     const opts = el("div", "hh-options");
     opts.id = "hh-options";
-    view.appendChild(opts);
+    src.appendChild(opts);
+    view.appendChild(src);
 
-    const found = el("div", "hh-found");
-    found.id = "hh-found";
-    view.appendChild(found);
-    paintDetected();
+    const dock = el("div", "hh-dock");
+    DOCK.forEach((a, i) => {
+      const b = el("button", "hh-tile" + (i === 0 ? " primary" : ""));
+      b.type = "button";
+      b.dataset.act = a.id;
+      b.title = a.tip;
+      b.setAttribute("aria-label", a.label);
+      b.style.setProperty("--i", i);
+      b.innerHTML = '<span class="hh-tileicon">' + a.icon + '</span><span class="hh-tilelabel"></span>'
+        + '<span class="hh-tilespin" aria-hidden="true"></span>';
+      b.querySelector(".hh-tilelabel").textContent = a.short;
+      b.onclick = (e) => { ripple(b, e); dockAction(a.id, b); };
+      dock.appendChild(b);
+    });
+    view.appendChild(dock);
 
-    const sheet = el("div", "hh-sheet");
-    sheet.id = "hh-steps";
+    const det = el("section", "hh-card hh-detect");
+    det.id = "hh-detect";
+    view.appendChild(det);
+
+    view.appendChild(renderRunCard());
+    logDisclosure(view);
+    paintDetection(true);
+    paintStages();
+    paintResult();
+  }
+
+  function setAutomation(on) {
+    state.autoMode = on;
+    if (on) {
+      state.autoOpenBox = true;          // automation needs to open the headline itself
+      toast("Automation on — the next story runs by itself");
+    } else {
+      stopHold();
+      toast("Automation off");
+    }
+    store.save();
+    render();
+  }
+
+  /* ---------- Ask ---------- */
+
+  let askDraft = "";
+  let askOut = null;          // { kind, title, lines: [{ ok, text }], busy }
+  let askHistAt = -1;
+
+  function renderAsk() {
+    const box = el("section", "hh-ask");
+    const row = el("div", "hh-askrow");
+    const ic = el("span", "hh-askicon");
+    ic.innerHTML = IC.spark;
+    row.appendChild(ic);
+    const inp = el("input", "hh-askin");
+    inp.type = "text";
+    inp.dataset.key = "ask";
+    inp.id = "hh-askin";
+    inp.placeholder = "Ask anything — “get everything”…";
+    inp.value = askDraft;
+    inp.spellcheck = false;
+    inp.autocomplete = "off";
+    inp.setAttribute("aria-label", "Tell the Highlighter what to do");
+    inp.oninput = () => { askDraft = inp.value; askHistAt = -1; paintAskPreview(); };
+    inp.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submitAsk(); return; }
+      if (e.key === "Escape") { e.preventDefault(); if (inp.value) { inp.value = askDraft = ""; paintAskPreview(); } else inp.blur(); return; }
+      const hist = state.askHist || [];
+      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && hist.length) {
+        e.preventDefault();
+        askHistAt = e.key === "ArrowUp" ? Math.min(hist.length - 1, askHistAt + 1) : Math.max(-1, askHistAt - 1);
+        inp.value = askDraft = askHistAt >= 0 ? hist[askHistAt] : "";
+        paintAskPreview();
+      }
+    };
+    inp.onfocus = () => box.classList.add("focus");
+    inp.onblur = () => box.classList.remove("focus");
+    row.appendChild(inp);
+    row.appendChild(el("kbd", "hh-kbd", "Alt K"));
+    const go = iconBtn(IC.send, "Do it (Enter)", () => submitAsk(), "hh-askgo");
+    go.id = "hh-askgo";
+    row.appendChild(go);
+    box.appendChild(row);
+
+    const prev = el("div", "hh-askprev");
+    prev.id = "hh-askprev";
+    prev.setAttribute("aria-live", "polite");
+    box.appendChild(prev);
+
+    const sugs = el("div", "hh-sugs");
+    sugs.id = "hh-sugs";
+    IN.SUGGESTIONS.slice(0, 6).forEach((s, i) => {
+      const c = el("button", "hh-sug", s.text);
+      c.type = "button";
+      c.title = s.hint;
+      c.style.setProperty("--i", i);
+      c.onclick = () => { askDraft = s.text; const n = root.querySelector("#hh-askin"); if (n) n.value = s.text; submitAsk(); };
+      sugs.appendChild(c);
+    });
+    box.appendChild(sugs);
+
+    const out = el("div", "hh-askout");
+    out.id = "hh-askout";
+    box.appendChild(out);
+    setTimeout(() => { paintAskPreview(); paintAskOut(); }, 0);
+    return box;
+  }
+
+  function askContext() {
+    const d = state.det;
+    return Object.assign({}, askCtx, {
+      hasOptions: !!(d && d.meta && d.meta.options && d.meta.options.length > 1),
+      hasCandidates: !!(d && d.meta && d.meta.candidates && d.meta.candidates.length > 1),
+      pendingConfirm: !!pendingAsk || !!(d && d.meta && d.meta.needsConfirm && !d.confirmed)
+    });
+  }
+
+  function paintAskPreview() {
+    const host = root && root.querySelector("#hh-askprev");
+    const sugs = root && root.querySelector("#hh-sugs");
+    if (!host) return;
+    host.innerHTML = "";
+    const t = askDraft.trim();
+    if (sugs) sugs.classList.toggle("hide", !!t || !!askOut);
+    host.classList.toggle("show", !!t);
+    if (!t) return;
+    const plan = IN.parse(t, askContext());
+    if (!plan.understood) {
+      host.className = "hh-askprev show unsure";
+      host.appendChild(el("span", "hh-askarrow", "?"));
+      host.appendChild(el("span", "hh-askplan", "Not sure what to do with that yet — try “copy the caption” or “highlight the headline”."));
+      return;
+    }
+    host.className = "hh-askprev show";
+    host.appendChild(el("span", "hh-askarrow", "→"));
+    plan.steps.forEach((s, i) => {
+      if (i) host.appendChild(el("span", "hh-askthen", "then"));
+      host.appendChild(el("span", "hh-askstep", IN.describe([s])));
+    });
+    if (plan.confidence < 0.7) {
+      const u = el("span", "hh-askunsure", "guessing");
+      u.title = "Didn't understand: " + plan.unknown.join(", ");
+      host.appendChild(u);
+    }
+  }
+
+  function paintAskOut() {
+    const host = root && root.querySelector("#hh-askout");
+    if (!host) return;
+    host.innerHTML = "";
+    host.className = "hh-askout";
+    if (!askOut) return;
+    host.classList.add("show", askOut.kind || "info");
+    const top = el("div", "hh-askouttop");
+    const ic = el("span", "hh-askouticon");
+    ic.innerHTML = askOut.busy ? '<span class="hh-btnspin"></span>' : askOut.kind === "done" ? ICON_CHECK : askOut.kind === "info" ? IC.info : askOut.kind === "part" ? IC.warn : ICON_CROSS;
+    top.appendChild(ic);
+    top.appendChild(el("span", "hh-askouttitle", askOut.title));
+    if (!askOut.busy) {
+      const x = iconBtn(IC.x, "Dismiss", () => { askOut = null; paintAskOut(); paintAskPreview(); }, "hh-askx");
+      top.appendChild(x);
+    }
+    host.appendChild(top);
+    (askOut.lines || []).forEach((l, i) => {
+      const row = el("div", "hh-askline " + (l.ok === true ? "ok" : l.ok === "part" ? "part" : l.ok === "info" ? "info" : "bad"));
+      row.style.setProperty("--i", i);
+      row.appendChild(el("span", "hh-askdot"));
+      row.appendChild(el("span", "hh-asktext", l.text));
+      host.appendChild(row);
+    });
+    if (askOut.suggest) {
+      const sg = el("div", "hh-sugs inline");
+      askOut.suggest.forEach(s => {
+        const c = el("button", "hh-sug", s);
+        c.type = "button";
+        c.onclick = () => { askDraft = s; const n = root.querySelector("#hh-askin"); if (n) n.value = s; submitAsk(); };
+        sg.appendChild(c);
+      });
+      host.appendChild(sg);
+    }
+  }
+
+  async function submitAsk() {
+    const text = askDraft.trim();
+    if (!text) { const n = root.querySelector("#hh-askin"); if (n) n.focus(); return; }
+    if (askBusy) { toast("Still working on the last one"); return; }
+    state.askHist = [text].concat((state.askHist || []).filter(h => h !== text)).slice(0, 20);
+    askHistAt = -1;
+    store.save();
+    askDraft = "";
+    const n = root.querySelector("#hh-askin");
+    if (n) n.value = "";
+    paintAskPreview();
+    await runAsk(text);
+  }
+
+  /* ---------- the detected fields ---------- */
+
+  let detectTimer = null;
+  function scheduleDetect() {
+    clearTimeout(detectTimer);
+    detectTimer = setTimeout(() => detectAndPaint(false), 260);
+  }
+
+  function detectAndPaint(animate) {
+    clearTimeout(detectTimer);
+    if (state.bundle.trim()) detectText();
+    else if (state.det && state.det.meta && state.det.meta.from !== "page") state.det = null;
+    paintDetection(animate);
+    paintStages();
+  }
+
+  const pct = (v) => Math.round((v || 0) * 100) + "%";
+  const level = (v) => v >= 0.8 ? "high" : v >= 0.6 ? "mid" : "low";
+
+  function meter(v, label) {
+    const m = el("span", "hh-meter");
+    m.dataset.level = level(v);
+    m.title = (label || "Confidence") + ": " + pct(v);
+    const bar = el("span", "hh-meterbar");
+    const fill = el("i");
+    fill.style.setProperty("--v", String(Math.max(0.04, v || 0)));
+    bar.appendChild(fill);
+    m.appendChild(bar);
+    m.appendChild(el("b", null, pct(v)));
+    return m;
+  }
+
+  function confPill(v) {
+    const p = el("span", "hh-conf", pct(v));
+    p.dataset.level = level(v);
+    p.title = "How sure the Highlighter is about this field";
+    return p;
+  }
+
+  function copyBtn(getText, label) {
+    const b = el("button", "hh-icon hh-copy");
+    b.type = "button";
+    b.innerHTML = '<span class="hh-copyi">' + IC.copy + '</span><span class="hh-copyok">' + ICON_CHECK + "</span>";
+    b.title = "Copy " + label;
+    b.setAttribute("aria-label", "Copy " + label);
+    b.onclick = async () => {
+      const t = getText();
+      if (!t) { toast("Nothing to copy — the " + label + " is empty"); return; }
+      const ok = await writeClipboard(t);
+      if (ok) {
+        b.classList.add("done");
+        setTimeout(() => b.classList.remove("done"), 1300);
+        toast(label.charAt(0).toUpperCase() + label.slice(1) + " copied");
+      } else toast("Chrome refused the clipboard — select the text and press Ctrl + C");
+    };
+    return b;
+  }
+
+  // Grows a text box to fit what's in it, within limits.
+  function autosize(ta, max) {
+    ta.style.height = "auto";
+    ta.style.height = Math.min(max || 220, Math.max(38, ta.scrollHeight + 2)) + "px";
+  }
+
+  function paintOptions(d) {
+    const host = root && root.querySelector("#hh-options");
+    if (!host) return;
+    host.innerHTML = "";
+    const o = d && d.meta && d.meta.options;
+    if (!o || o.length < 2) return;
+    host.appendChild(segmented(o.map((x, i) => [i, x.label + (x.rating ? "  " + x.rating : "")]),
+      Math.min(state.optionIndex || 0, o.length - 1),
+      (i) => { state.optionIndex = i; store.save(); detectText(); paintDetection(true); paintStages(); }, "hh-optseg"));
+  }
+
+  function fieldShell(key, label, conf, count, missingNote) {
+    const f = el("div", "hh-field");
+    f.dataset.field = key;
+    const top = el("div", "hh-fieldtop");
+    top.appendChild(el("span", "hh-fieldname", label));
+    if (conf) top.appendChild(confPill(conf));
+    else if (missingNote) top.appendChild(el("span", "hh-conf none", "Not found"));
+    const c = el("span", "hh-fieldcount", count || "");
+    c.dataset.count = key;
+    top.appendChild(c);
+    f.appendChild(top);
+    return f;
+  }
+
+  function paintDetection(animate) {
+    const host = root && root.querySelector("#hh-detect");
+    if (!host) return;
+    const d = currentDet();
+    paintOptions(d);
+    host.innerHTML = "";
+    host.className = "hh-card hh-detect" + (d ? "" : " empty") + (animate ? " hh-reveal" : "");
+    if (!d) {
+      const e = el("div", "hh-emptystate");
+      const i = el("span", "hh-emptyicon");
+      i.innerHTML = IC.empty;
+      e.appendChild(i);
+      const t = el("div", "hh-emptytext");
+      t.appendChild(el("div", "hh-emptytitle", "Nothing detected yet"));
+      t.appendChild(el("div", "hh-emptysub", state.bundle.trim()
+        ? "Press Detect to read the source."
+        : "Paste a post above, or press Detect to read the open design."));
+      e.appendChild(t);
+      host.appendChild(e);
+      return;
+    }
+    const m = d.meta;
+    const hd = el("div", "hh-cardhead");
+    hd.appendChild(el("span", "hh-cardtitle", "Detected"));
+    const chip = el("span", "hh-method", m.strategyName || "—");
+    chip.title = {
+      Labels: "Found by its labels (Headline:, Caption:, Hashtags:)",
+      Structure: "Found by its structure: a heading or bold line, then the story",
+      Layout: "Found by its layout: a short opening line, then the story",
+      Meaning: "Found by reading every block and weighing which one reads as a headline",
+      Design: "Read from the open Canva design"
+    }[m.strategyName] || "";
+    hd.appendChild(chip);
+    hd.appendChild(meter(m.confidence.overall, "Overall confidence"));
+    host.appendChild(hd);
+
+    if (m.needsConfirm && !d.confirmed && d.fields.headline) host.appendChild(confirmBanner(d));
+
+    /* headline */
+    const hl = d.fields.headline;
+    const fh = fieldShell("headline", "Headline", hl ? m.confidence.headline : 0, "", !hl);
+    fh.querySelector('[data-count="headline"]').textContent = hl ? flatLen(hl) + " ch" : "";
+    fh.querySelector(".hh-fieldtop").appendChild(copyBtn(() => currentDet() && currentDet().fields.headline, "headline"));
+    const th = el("textarea", "hh-input hh-fieldin hh-headin" + (hl ? "" : " missing"));
+    th.dataset.key = "f-headline";
+    th.rows = 1;
+    th.value = hl;
+    th.placeholder = "No headline found — type it here if there is one";
+    th.spellcheck = false;
+    th.oninput = () => {
+      const dd = currentDet(); if (!dd) return;
+      dd.fields.headline = th.value; dd.edited.headline = true; dd.confirmed = true;
+      th.classList.toggle("missing", !th.value.trim());
+      fh.querySelector('[data-count="headline"]').textContent = th.value.trim() ? flatLen(th.value) + " ch" : "";
+      const b = host.querySelector(".hh-confirmbar"); if (b) b.remove();
+      saveSoon(); paintStages();
+    };
+    fh.appendChild(th);
+    if (m.candidates && m.candidates.length > 1) fh.appendChild(candidateList(d));
+    if (hl && m.reasons && m.reasons.length) fh.appendChild(el("div", "hh-why", "Why: " + m.reasons.slice(0, 3).join(" · ")));
+    host.appendChild(fh);
+
+    /* caption */
+    const cp = d.fields.caption;
+    const fc = fieldShell("caption", "Caption", cp ? m.confidence.caption : 0, "", !cp);
+    const capCount = () => (cp || "").length;
+    fc.querySelector('[data-count="caption"]').textContent = cp ? capCount().toLocaleString() + " / 5,000" : "";
+    fc.querySelector(".hh-fieldtop").appendChild(copyBtn(() => currentDet() && currentDet().fields.caption, "caption"));
+    const tc = el("textarea", "hh-input hh-fieldin hh-capin" + (cp ? "" : " missing"));
+    tc.dataset.key = "f-caption";
+    tc.value = cp;
+    tc.placeholder = "No caption found";
+    tc.oninput = () => {
+      const dd = currentDet(); if (!dd) return;
+      dd.fields.caption = tc.value; dd.edited.caption = true;
+      tc.classList.toggle("missing", !tc.value.trim());
+      const cc = fc.querySelector('[data-count="caption"]');
+      cc.textContent = tc.value.trim() ? tc.value.length.toLocaleString() + " / 5,000" : "";
+      cc.classList.toggle("over", tc.value.length > 5000);
+      autosize(tc, 200);
+      saveSoon(); paintStages();
+    };
+    fc.appendChild(tc);
+    host.appendChild(fc);
+
+    /* hashtags */
+    const tags = d.fields.hashtags || [];
+    const ft = fieldShell("hashtags", "Hashtags", tags.length ? m.confidence.hashtags : 0, "", !tags.length);
+    ft.querySelector('[data-count="hashtags"]').textContent = tags.length ? String(tags.length) : "";
+    ft.querySelector(".hh-fieldtop").appendChild(copyBtn(() => (currentDet() ? currentDet().fields.hashtags : []).join(" "), "hashtags"));
+    const chips = el("div", "hh-tagbox");
+    tags.forEach((t, i) => {
+      const c = el("span", "hh-tag");
+      c.style.setProperty("--i", i);
+      c.appendChild(el("span", null, t));
+      const x = el("button", "hh-tagx");
+      x.type = "button";
+      x.innerHTML = IC.x;
+      x.title = "Remove " + t;
+      x.setAttribute("aria-label", "Remove " + t);
+      x.onclick = () => {
+        const dd = currentDet(); if (!dd) return;
+        dd.fields.hashtags = dd.fields.hashtags.filter(z => z !== t);
+        dd.edited.hashtags = true; saveSoon(); paintDetection(); paintStages();
+      };
+      c.appendChild(x);
+      chips.appendChild(c);
+    });
+    const add = el("input", "hh-tagin");
+    add.type = "text";
+    add.dataset.key = "f-tags";
+    add.placeholder = tags.length ? "Add…" : "No hashtags found — add one";
+    add.spellcheck = false;
+    const commit = () => {
+      const dd = currentDet(); if (!dd) return;
+      const words = add.value.split(/[\s,]+/).map(w => w.trim()).filter(Boolean).map(w => w.startsWith("#") ? w : "#" + w)
+        .filter(w => /^#[\p{L}\p{N}_]+$/u.test(w));
+      if (!words.length) return;
+      const have = new Set(dd.fields.hashtags.map(z => z.toLowerCase()));
+      words.forEach(w => { if (!have.has(w.toLowerCase())) { dd.fields.hashtags.push(w); have.add(w.toLowerCase()); } });
+      dd.edited.hashtags = true; add.value = ""; saveSoon(); paintDetection(); paintStages();
+      const again = root.querySelector('[data-key="f-tags"]'); if (again) again.focus();
+    };
+    add.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === "," || (e.key === " " && add.value.trim())) { e.preventDefault(); commit(); }
+      if (e.key === "Backspace" && !add.value) {
+        const dd = currentDet();
+        if (dd && dd.fields.hashtags.length) { dd.fields.hashtags.pop(); dd.edited.hashtags = true; saveSoon(); paintDetection(); paintStages(); const a = root.querySelector('[data-key="f-tags"]'); if (a) a.focus(); }
+      }
+    };
+    add.onblur = () => { if (add.value.trim()) commit(); };
+    chips.appendChild(add);
+    chips.onclick = (e) => { if (e.target === chips) add.focus(); };
+    ft.appendChild(chips);
+    host.appendChild(ft);
+
+    if (m.warnings && m.warnings.length) {
+      const w = el("div", "hh-warns");
+      m.warnings.slice(0, 4).forEach(t => {
+        const r = el("div", "hh-warn");
+        const i = el("span", "hh-warni");
+        i.innerHTML = IC.info;
+        r.appendChild(i);
+        r.appendChild(el("span", null, t));
+        w.appendChild(r);
+      });
+      host.appendChild(w);
+    }
+
+    const foot = el("div", "hh-detfoot");
+    const tried = (m.tried || []).map(t => (E.STRATEGY_NAMES[t.strategy] || t.strategy) + (t.ok ? "" : " ✕")).join(" → ");
+    foot.textContent = (m.from === "page" ? "Read from the design" : "Read in " + (m.ms < 1 ? "<1" : Math.round(m.ms)) + " ms")
+      + (tried ? " · " + tried : "");
+    host.appendChild(foot);
+
+    requestAnimationFrame(() => { autosize(th, 120); autosize(tc, 200); });
+  }
+
+  const flatLen = (s) => [...String(s || "").replace(/\s*\n\s*/g, " ").trim()].length;
+
+  let saveTimer = null;
+  function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => store.save(), 400); }
+
+  function confirmBanner(d) {
+    const b = el("div", "hh-confirmbar");
+    b.setAttribute("role", "alert");
+    const i = el("span", "hh-warni");
+    i.innerHTML = IC.warn;
+    b.appendChild(i);
+    const t = el("div", "hh-confirmtext");
+    t.appendChild(el("b", null, "Is this the headline?"));
+    t.appendChild(el("span", null, " Only " + pct(d.meta.confidence.headline) + " sure. Nothing is changed in Canva until you say."));
+    b.appendChild(t);
+    const row = el("div", "hh-confirmrow");
+    const yes = el("button", "hh-btn primary small", "Yes, use it");
+    yes.type = "button";
+    yes.onclick = () => { d.confirmed = true; store.save(); paintDetection(); paintStages(); toast("Headline confirmed"); };
+    row.appendChild(yes);
+    if (d.meta.candidates && d.meta.candidates.length > 1) {
+      const other = el("button", "hh-btn small", "Show other picks");
+      other.type = "button";
+      other.onclick = () => { const l = root.querySelector(".hh-cands"); if (l) { l.open = true; l.scrollIntoView({ block: "nearest", behavior: "smooth" }); } };
+      row.appendChild(other);
+    }
+    if (d.meta.from === "page") {
+      const show = el("button", "hh-btn small", "Show me");
+      show.type = "button";
+      show.onclick = () => runSteps([{ op: "locate" }], { title: "Locate" });
+      row.appendChild(show);
+    }
+    b.appendChild(row);
+    return b;
+  }
+
+  function candidateList(d) {
+    const det = el("details", "hh-cands");
+    const others = d.meta.candidates.filter(c => E.similarity(c.text, d.fields.headline) < 0.98);
+    det.appendChild(el("summary", null, "Other candidates (" + others.length + ")"));
+    others.forEach(c => {
+      const b = el("button", "hh-cand");
+      b.type = "button";
+      b.appendChild(el("span", "hh-candtext", c.text.replace(/\s*\n\s*/g, " / ")));
+      b.appendChild(confPill(c.confidence || 0));
+      b.title = (c.why || []).join(", ");
+      b.onclick = () => useCandidate(c.text);
+      det.appendChild(b);
+    });
+    return det;
+  }
+
+  function useCandidate(text) {
+    const d = currentDet();
+    if (!d) return false;
+    d.fields.headline = text;
+    d.edited.headline = true;
+    d.confirmed = true;
+    store.save();
+    paintDetection(true);
+    paintStages();
+    flashField("headline");
+    toast("Using that headline");
+    return true;
+  }
+
+  function flashField(key) {
+    const f = root && root.querySelector('.hh-field[data-field="' + key + '"]');
+    if (!f) return;
+    f.classList.remove("hh-flash");
+    void f.offsetWidth;
+    f.classList.add("hh-flash");
+    setTimeout(() => f.classList.remove("hh-flash"), 1200);
+  }
+
+  function setTile(btn, s) {
+    if (!btn) return;
+    btn.classList.remove("busy", "ok", "bad", "part");
+    if (s) btn.classList.add(s);
+    btn.setAttribute("aria-busy", s === "busy" ? "true" : "false");
+  }
+
+  // The five buttons under the source run the same steps the Ask box does.
+  async function dockAction(id, btn) {
+    const steps = {
+      detect: [{ op: "detect", fields: ["headline", "caption", "hashtags"], force: true }],
+      extract: [{ op: "extract", fields: ["headline", "caption", "hashtags"] }],
+      highlight: [{ op: "highlight" }],
+      copy: [{ op: "copy", fields: ["headline", "caption", "hashtags"] }],
+      retry: [{ op: "reanalyze" }]
+    }[id];
+    if (!steps) return;
+    const live = () => root.querySelector('.hh-tile[data-act="' + id + '"]') || btn;
+    setTile(live(), "busy");
+    const res = await runSteps(steps, { title: DOCK.find(a => a.id === id).label, quiet: true });
+    const k = res.kind === "done" ? "ok" : res.kind === "part" ? "part" : "bad";
+    setTile(live(), k);
+    setTimeout(() => setTile(live(), null), 1500);
+  }
+
+  /* ---------- Run on design ---------- */
+
+  function renderRunCard() {
+    const card = el("section", "hh-card hh-runcard" + (state.runOpen !== false ? " open" : ""));
+    const head = el("button", "hh-cardhead hh-collapse");
+    head.type = "button";
+    head.setAttribute("aria-expanded", state.runOpen !== false ? "true" : "false");
+    head.appendChild(el("span", "hh-cardtitle", "Run on design"));
+    const n = STAGES.filter(s => state[s.key]).length;
+    const cnt = el("span", "hh-method", n + " of " + STAGES.length + " steps");
+    cnt.id = "hh-stepcount";
+    head.appendChild(cnt);
+    const ch = el("span", "hh-chev");
+    ch.innerHTML = IC.chev;
+    head.appendChild(ch);
+    head.onclick = () => {
+      state.runOpen = state.runOpen === false;
+      card.classList.toggle("open", state.runOpen);
+      head.setAttribute("aria-expanded", state.runOpen ? "true" : "false");
+      store.save();
+    };
+    card.appendChild(head);
+
+    const inner = el("div", "hh-collapsible");
+    const innerWrap = el("div", "hh-collapsein");
+    const sheetEl = el("div", "hh-sheet");
+    sheetEl.id = "hh-steps";
     STAGES.forEach((st, i) => {
       const row = el("div", "hh-step");
       row.dataset.id = st.id;
@@ -4346,111 +5448,97 @@ weapon=w*apon`;
         }
         store.save();
         if (run && !running) run = null;
+        const c = root.querySelector("#hh-stepcount");
+        if (c) c.textContent = STAGES.filter(s => state[s.key]).length + " of " + STAGES.length + " steps";
         paintStages();
       }, st.label));
-      sheet.appendChild(row);
+      sheetEl.appendChild(row);
     });
-    view.appendChild(sheet);
+    innerWrap.appendChild(sheetEl);
+    inner.appendChild(innerWrap);
+    card.appendChild(inner);
 
-    if (autoHold && state.autoMode) {
-      const hold = el("div", "hh-hold");
-      hold.setAttribute("role", "status");
-      const h = autoHold;
-      const title = h.why === "nohead" ? "Waiting for a page with a headline"
-        : h.why === "finished" ? "Waiting for a new page"
-        : h.what === "arriving" ? "Photo arriving\u2026"
-        : h.what === "checking" ? "Checking the photo\u2026"
-        : "Waiting for the photo";
-      const text = h.why === "nohead"
-        ? "There's no headline box on this page. Open your template page and the story runs there by itself."
-        : h.why === "finished"
-        ? "This page already has a finished post (\u201c" + h.what + "\u2026\u201d). Open a new page and the story runs there by itself."
-        : h.what === "same"
-        ? "This page still has the last post's photo. Send the new one from PromptSnap and the run starts by itself."
-        : h.what === "arriving"
-        ? "A new photo is coming into the design. The run starts as soon as it has fully loaded."
-        : h.what === "checking"
-        ? "There's a new photo in the design. Making sure it has finished loading, then the run starts."
-        : "No photo in the design yet. Send it from PromptSnap, or add it yourself, and the run starts by itself.";
-      hold.appendChild(el("div", "hh-holdtitle", title));
-      hold.appendChild(el("div", "hh-holdtext", text));
-      const row = el("div", "hh-holdrow");
-      const here = el("button", "hh-btn", h.why === "photo" ? "Run now" : "Run here anyway");
-      here.type = "button";
-      here.onclick = () => {
-        stopHold(); render();
-        if (h.why === "photo") { photoSkip = true; autoStart(); } else runQuick();
-      };
-      const stop = el("button", "hh-btn", "Stop waiting");
-      stop.type = "button";
-      stop.onclick = () => { stopHold(); render(); toast("Stopped \u2014 press Run when you're ready"); };
-      row.appendChild(here);
-      row.appendChild(stop);
-      hold.appendChild(row);
-      view.appendChild(hold);
-    }
+    if (autoHold && state.autoMode) card.appendChild(renderHold());
 
     const go = el("button", "hh-go");
     go.id = "hh-go";
     go.type = "button";
     go.appendChild(el("span", "hh-golabel", "Run"));
+    go.title = "Run every step that's on (or press Ctrl + Enter in the source box)";
     const bar = el("span", "hh-gobar");
     bar.id = "hh-gobar";
     go.appendChild(bar);
-    go.onclick = runQuick;
-    view.appendChild(go);
+    go.onclick = (e) => { ripple(go, e); runQuick(); };
+    card.appendChild(go);
 
     const result = el("div", "hh-result");
     result.id = "hh-result";
-    view.appendChild(result);
-
-    view.appendChild(el("div", "hh-hint hh-center", "Ctrl + Enter runs it from the paste box."));
-    logDisclosure(view);
-
-    paintStages();
-    paintResult();
+    card.appendChild(result);
+    return card;
   }
 
-  function paintDetected() {
-    const host = document.getElementById("hh-found");
-    const optHost = document.getElementById("hh-options");
-    if (!host) return;
-    host.innerHTML = "";
-    if (optHost) optHost.innerHTML = "";
-
-    if (!state.bundle.trim()) { host.classList.add("empty"); return; }
-    host.classList.remove("empty");
-
-    const opts = splitOptions(state.bundle);
-    if (opts && optHost) {
-      optHost.appendChild(segmented(opts.map((o, i) => [i, o.label + (o.rating ? "  " + o.rating : "")]),
-        Math.min(state.optionIndex || 0, opts.length - 1),
-        (i) => { state.optionIndex = i; store.save(); paintDetected(); }, "hh-optseg"));
+  function renderHold() {
+    const hold = el("div", "hh-hold");
+    hold.setAttribute("role", "status");
+    const h = autoHold;
+    const title = h.why === "nohead" ? "Waiting for a page with a headline"
+      : h.why === "finished" ? "Waiting for a new page"
+      : h.why === "confirm" ? "Which text is the headline?"
+      : h.why === "check" ? "Check the headline first"
+      : h.what === "arriving" ? "Photo arriving…"
+      : h.what === "checking" ? "Checking the photo…"
+      : "Waiting for the photo";
+    const text = h.why === "nohead"
+      ? "There's no headline box on this page. Open your template page and the story runs there by itself."
+      : h.why === "finished"
+      ? "This page already has a finished post (“" + h.what + "…”). Open a new page and the story runs there by itself."
+      : h.why === "confirm"
+      ? "I'm not sure which text on this page is the headline. Point it out once and the story runs — I'll remember the layout."
+      : h.why === "check"
+      ? "The story's headline isn't clear. Confirm it under Detected and the run starts."
+      : h.what === "same"
+      ? "This page still has the last post's photo. Send the new one from PromptSnap and the run starts by itself."
+      : h.what === "arriving"
+      ? "A new photo is coming into the design. The run starts as soon as it has fully loaded."
+      : h.what === "checking"
+      ? "There's a new photo in the design. Making sure it has finished loading, then the run starts."
+      : "No photo in the design yet. Send it from PromptSnap, or add it yourself, and the run starts by itself.";
+    hold.appendChild(el("div", "hh-holdtitle", title));
+    hold.appendChild(el("div", "hh-holdtext", text));
+    const row = el("div", "hh-holdrow");
+    if (h.why === "confirm") {
+      const show = el("button", "hh-btn primary small", "Show me");
+      show.type = "button";
+      show.onclick = async () => {
+        const b = quickBundle();
+        const rk = rankOnPage(b && b.headline || "");
+        if (!rk.top) { toast("No text on this page to choose from"); return; }
+        const pick = await askWhichHeadline(rk);
+        if (pick) rememberHeadline(pick, rk);
+      };
+      row.appendChild(show);
+    } else if (h.why !== "check") {
+      const here = el("button", "hh-btn small", h.why === "photo" ? "Run now" : "Run here anyway");
+      here.type = "button";
+      here.onclick = () => {
+        stopHold(); render();
+        if (h.why === "photo") { photoSkip = true; autoStart(); } else runQuick();
+      };
+      row.appendChild(here);
     }
-
-    const b = quickBundle();
-    const cell = (label, value, ok) => {
-      const c = el("div", "hh-cell" + (ok ? "" : " miss"));
-      c.appendChild(el("div", "hh-cellval", value));
-      c.appendChild(el("div", "hh-celllabel", label));
-      host.appendChild(c);
-    };
-    if (!b) {
-      host.appendChild(el("div", "hh-foundnote",
-        "No Headline or Caption labels found. Add them, or paste just the headline on its own."));
-      return;
-    }
-    const n = bundleTagCount(b);
-    cell("Headline", b.headline ? b.headline.trim().length + " chars" : "Missing", !!b.headline);
-    cell("Caption", b.caption ? b.caption.trim().length.toLocaleString() + " chars" : "None", !!b.caption);
-    cell("Hashtags", n ? String(n) : "None", n > 0);
+    const stop = el("button", "hh-btn small", "Stop waiting");
+    stop.type = "button";
+    stop.onclick = () => { stopHold(); render(); toast("Stopped — press Run when you're ready"); };
+    row.appendChild(stop);
+    hold.appendChild(row);
+    return hold;
   }
 
   function paintStages() {
     paintCompact();
     const host = document.getElementById("hh-steps");
     if (!host) return;
-    const b = run ? null : (state.bundle.trim() ? quickBundle() : null);
+    const b = run ? null : quickBundle();
     STAGES.forEach(st => {
       const row = host.querySelector('[data-id="' + st.id + '"]');
       if (!row) return;
@@ -4461,8 +5549,8 @@ weapon=w*apon`;
       } else {
         s = state[st.key] ? "ready" : "off";
         if (s === "ready" && b) {
-          if ((st.id === "colour" || st.id === "align") && !b.headline) detail = "No headline in what you pasted";
-          if (st.id === "notes" && !b.caption && !b.tags) detail = "No caption in what you pasted";
+          if ((st.id === "colour" || st.id === "align") && !b.headline) detail = "No headline detected";
+          if (st.id === "notes" && !b.caption && !b.tags) detail = "No caption detected";
         }
         if (s === "off") detail = "Off";
       }
@@ -4481,7 +5569,7 @@ weapon=w*apon`;
         const live = STAGES.filter(st => run.status[st.id] !== "skip");
         const settled = live.filter(st => ["done", "fail"].includes(run.status[st.id])).length;
         const cur = live.findIndex(st => run.status[st.id] === "run");
-        if (bar) bar.style.transform = "scaleX(" + (live.length ? settled / live.length : 0) + ")";
+        if (bar) bar.style.transform = "scaleX(" + (live.length ? Math.max(0.03, settled / live.length) : 0) + ")";
         if (label) label.textContent = cur >= 0 ? "Step " + (cur + 1) + " of " + live.length + ": " + live[cur].label : "Running";
       } else {
         if (bar) bar.style.transform = "scaleX(0)";
@@ -4522,13 +5610,22 @@ weapon=w*apon`;
     paintStages();
   }
 
-  const censoredWords = (s) => (String(s || "").match(/[A-Za-z]*[*\u00a3][A-Za-z*\u00a3]*/g) || []).length;
+  const censoredWords = (s) => (String(s || "").match(/[A-Za-z]*[*£][A-Za-z*£]*/g) || []).length;
 
   async function runQuick() {
     if (running) return;
-    if (!state.bundle.trim()) { toast("Paste your post first"); return; }
     const b = quickBundle();
-    if (!b) { toast("Add Headline: and Caption: labels, or paste just the headline"); return; }
+    if (!b) {
+      toast(state.bundle.trim() ? "Nothing to run — no headline or caption found in the source" : "Paste your post first — or press Detect to read the open design");
+      return;
+    }
+    const d = currentDet();
+    if (d && d.meta.needsConfirm && !d.confirmed && b.headline) {
+      if (state.view !== "studio" || state.compact || sheet) { state.view = "studio"; state.compact = false; sheet = null; render(); }
+      flashField("headline");
+      toast("Check the headline first — it's marked under Detected");
+      return;
+    }
 
     running = true;
     logClear();
@@ -4536,13 +5633,14 @@ weapon=w*apon`;
     run = { status: {}, detail: {}, result: null };
     STAGES.forEach(st => { run.status[st.id] = state[st.key] ? "wait" : "skip"; });
     if (!b.headline) ["colour", "align"].forEach(id => {
-      if (run.status[id] !== "skip") { run.status[id] = "skip"; run.detail[id] = "No headline in what you pasted"; }
+      if (run.status[id] !== "skip") { run.status[id] = "skip"; run.detail[id] = "No headline detected"; }
     });
     if (!b.caption && !b.tags && run.status.notes !== "skip") {
-      run.status.notes = "skip"; run.detail.notes = "No caption in what you pasted";
+      run.status.notes = "skip"; run.detail.notes = "No caption detected";
     }
     paintResult();
     paintStages();
+    if (d) log("Using the " + (d.meta.strategyName || "detected").toLowerCase() + " reading (" + pct(d.meta.confidence.overall) + " sure).");
 
     let done = 0, failed = 0;
     const step = async (id, fn) => {
@@ -4571,29 +5669,30 @@ weapon=w*apon`;
         return { ok: true, detail: n > 0 ? n + " word" + (n === 1 ? "" : "s") + " censored" : "Nothing needed censoring" };
       });
       if (run.status.censor === "skip") applyBundle(b);
-      log("Caption formatted \u2014 " + state.caption.length + " characters.");
+      log("Caption formatted — " + state.caption.length + " characters.");
 
       const coloured = await step("colour", async () => {
         await clearLeftPanel(log);
         const ok = await withRetry(async () => {
           const r = await coreSet();
-          if (!r) setStage("colour", "run", "Trying again\u2026");
+          if (!r) setStage("colour", "run", "Trying again…");
           return r;
         }, log, "the colouring");
         const n = state.phrases.length;
-        return { ok, detail: ok ? n + " phrase" + (n === 1 ? "" : "s") + " coloured" : "Couldn't finish colouring" };
+        if (ok) ringHeadline("done");
+        return { ok, detail: ok ? n + " phrase" + (n === 1 ? "" : "s") + " coloured — checked letter by letter" : "Couldn't finish colouring" };
       });
 
       if (coloured === false && run.status.align === "wait") {
         run.status.align = "skip";
-        run.detail.align = "Skipped \u2014 the headline didn't finish";
+        run.detail.align = "Skipped — the headline didn't finish";
         paintStages();
       }
       await step("align", async () => {
         await clearLeftPanel(log);
         const ok = await withRetry(async () => {
           const r = await placeHeadline(log);
-          if (!r) setStage("align", "run", "Trying again\u2026");
+          if (!r) setStage("align", "run", "Trying again…");
           return r;
         }, log, "the line-up");
         return { ok, detail: ok ? "Sitting just above the handle" : "Couldn't line it up" };
@@ -4603,7 +5702,7 @@ weapon=w*apon`;
         await clearLeftPanel(log);
         const r = await withRetry(async () => {
           const x = await fillWithPhoto(log);
-          if (!x.ok) setStage("fill", "run", "Trying again\u2026");
+          if (!x.ok) setStage("fill", "run", "Trying again…");
           return x;
         }, log, "the photo fill");
         return { ok: r.ok, detail: r.msg };
@@ -4613,7 +5712,7 @@ weapon=w*apon`;
         await clearLeftPanel(log);
         const ok = await withRetry(async () => {
           const r = await enhancePhoto(log);
-          if (!r) setStage("photo", "run", "Trying again\u2026");
+          if (!r) setStage("photo", "run", "Trying again…");
           return r;
         }, log, "the photo");
         const none = logLines.some(l => /^No photo on this page/.test(l));
@@ -4626,10 +5725,10 @@ weapon=w*apon`;
         await sleep(250);
         const ok = await withRetry(async () => {
           const r = await coreNotes();
-          if (!r) setStage("notes", "run", "Trying again\u2026");
+          if (!r) setStage("notes", "run", "Trying again…");
           return r;
         }, log, "Notes", { keepNotes: true });
-        return { ok, detail: ok ? "Caption is in Notes" : "Copied \u2014 paste it into Notes" };
+        return { ok, detail: ok ? "Caption is in Notes — checked line by line" : "Copied — paste it into Notes" };
       });
     } finally {
       const total = done + failed;
@@ -4643,7 +5742,8 @@ weapon=w*apon`;
       if (done && b.headline) {
         const pn = pageNumber();
         const pp = pagePhoto();
-        state.lastPost = { key: storyKey(state.text || b.headline), page: pn ? pn.cur : null, photo: pp ? photoKey(pp.src) : null };
+        state.lastPost = { key: storyKey(state.text || b.headline), text: E._.flat(state.text || b.headline),
+          page: pn ? pn.cur : null, photo: pp ? photoKey(pp.src) : null };
       }
       photoSkip = false;
       store.save();
@@ -4652,20 +5752,35 @@ weapon=w*apon`;
       chime(kind);
       setTimeout(drainQueue, 900);
     }
+    return run.result;
   }
 
   function clearAll() {
     resetWork();
     state.bundle = "";
     state.optionIndex = 0;
+    state.det = null;
     run = null;
+    askOut = null;
+    confirmedEl = null;
     store.save();
   }
 
-  /* ---------- Manual: Headline ---------- */
+  /* ---------- Tools ---------- */
+
+  function renderTools(view) {
+    if (!["headline", "caption"].includes(state.mtab)) state.mtab = "headline";
+    view.appendChild(segmented([["headline", "Headline"], ["caption", "Caption"]],
+      state.mtab, (v) => { state.mtab = v; store.save(); render(); }, "hh-subtabs"));
+    const inner = el("div", "hh-inner");
+    view.appendChild(inner);
+    if (state.mtab === "caption") renderCaption(inner);
+    else renderHeadline(inner);
+  }
 
   function renderHeadline(body) {
     const ta = el("textarea", "hh-input");
+    ta.dataset.key = "t-headline";
     ta.placeholder = "Paste the headline here.";
     ta.value = state.text;
     ta.oninput = () => {
@@ -4702,9 +5817,11 @@ weapon=w*apon`;
       const s = el("button", "hh-sw" + (hex === state.active ? " on" : ""));
       s.type = "button";
       s.style.background = cssFor(hex);
+      s.style.setProperty("--i", i);
       s.title = labelFor(hex) + (isGrad(hex)
-        ? " \u2014 gradient. Click to use, Alt-click to remove."
-        : " \u2014 click to use, double-click to edit, Alt-click to remove");
+        ? " — gradient. Click to use, Alt-click to remove."
+        : " — click to use, double-click to edit, Alt-click to remove");
+      s.setAttribute("aria-label", labelFor(hex));
       s.onclick = (e) => {
         if (e.altKey) {
           if (state.palette.length <= 2) { toast("Keep at least two colours"); return; }
@@ -4719,7 +5836,7 @@ weapon=w*apon`;
         if (isGrad(hex)) { toast("Gradients can't be edited here"); return; }
         const inp = el("input");
         inp.type = "color"; inp.value = hex; inp.className = "hh-hidden";
-        document.body.appendChild(inp);
+        root.appendChild(inp);
         inp.oninput = () => {
           const nv = inp.value.toUpperCase();
           state.palette[i] = nv;
@@ -4740,6 +5857,7 @@ weapon=w*apon`;
     hexRow.appendChild(prev);
     const hexIn = el("input", "hh-hexin");
     hexIn.type = "text";
+    hexIn.dataset.key = "t-hex";
     hexIn.placeholder = "Paste a colour code";
     hexIn.value = isGrad(state.active) ? gradStops(state.active).join(", ") : state.active.toUpperCase();
     hexIn.spellcheck = false;
@@ -4792,7 +5910,7 @@ weapon=w*apon`;
     mk("Clear", "", () => { state.tokens.forEach(t => t.color = null); state.phrases = []; state.cursor = -1; render(); },
       "Remove every highlight");
     mk("Copy", "", async () => {
-      try { await navigator.clipboard.writeText(state.text); toast("Headline copied"); } catch (e) { toast("Copy failed"); }
+      toast((await writeClipboard(state.text)) ? "Headline copied" : "Copy failed");
     }, "Copy the headline text");
     phr.appendChild(acts);
 
@@ -4835,10 +5953,9 @@ weapon=w*apon`;
     renderList();
   }
 
-  /* ---------- Manual: Caption ---------- */
-
   function renderCaption(body) {
     const raw = el("textarea", "hh-input hh-tall");
+    raw.dataset.key = "t-raw";
     raw.placeholder = "Paste the caption here.";
     raw.value = state.raw;
     raw.oninput = () => { state.raw = raw.value; store.save(); };
@@ -4879,7 +5996,7 @@ weapon=w*apon`;
       store.save(); render();
     }, "Rebuild the hashtag line");
     mk("Copy", "", async () => {
-      try { await navigator.clipboard.writeText(state.caption); toast("Caption copied"); } catch (e) { toast("Copy failed"); }
+      toast((await writeClipboard(state.caption)) ? "Caption copied" : "Copy failed");
     });
     body.appendChild(acts);
 
@@ -4901,6 +6018,7 @@ weapon=w*apon`;
     tagRow.appendChild(el("span", "hh-taglabel", "Always add"));
     const tagIn = el("input", "hh-hexin hh-taginput");
     tagIn.type = "text";
+    tagIn.dataset.key = "t-always";
     tagIn.value = state.tags;
     tagIn.placeholder = "#viralstory";
     tagIn.oninput = () => { state.tags = tagIn.value; store.save(); };
@@ -4909,6 +6027,7 @@ weapon=w*apon`;
     body.appendChild(fmt2);
 
     const out = el("textarea", "hh-input hh-tall");
+    out.dataset.key = "t-caption";
     out.placeholder = "The finished caption appears here. You can edit it.";
     out.value = state.caption;
     const count = el("div", "hh-count", state.caption.length.toLocaleString() + " / 5,000");
@@ -4932,10 +6051,53 @@ weapon=w*apon`;
     logDisclosure(body);
   }
 
-  /* ---------- Manual: Settings ---------- */
+  /* ---------- Settings ---------- */
 
   function renderSettings(body) {
-    renderUpdates(body);
+    // Updates, at a glance; the sheet has the rest.
+    const u = el("button", "hh-group hh-updsummary");
+    u.type = "button";
+    const ph = updPhase();
+    u.dataset.phase = ph;
+    const ui = el("span", "hh-updsumicon");
+    ui.innerHTML = IC.update;
+    u.appendChild(ui);
+    const ut = el("span", "hh-updsumtext");
+    ut.appendChild(el("b", null, ph === "ready" ? "Update available — v" + upd.last.latest
+      : ph === "checking" ? "Checking for updates…" : ph === "error" ? "Couldn't check for updates"
+      : ph === "current" ? "Up to date" : "Updates"));
+    ut.appendChild(el("span", null, "Version " + INSTALLED + (upd.checkedAt ? " · checked " + agoText(upd.checkedAt) : "")));
+    u.appendChild(ut);
+    const uc = el("span", "hh-chev side");
+    uc.innerHTML = IC.chev;
+    u.appendChild(uc);
+    u.onclick = openUpdates;
+    body.appendChild(u);
+
+    const gd = el("div", "hh-group");
+    gd.appendChild(el("div", "hh-grouptitle", "Detection"));
+    gd.appendChild(settingRow("Ask me when unsure", "If the headline match is weak, you confirm it before anything changes in Canva",
+      !!state.askConfirm, (on) => { state.askConfirm = on; store.save(); }));
+    gd.appendChild(el("div", "hh-setlabel hh-spaced", "How sure before acting"));
+    gd.appendChild(segmented([["careful", "Careful"], ["balanced", "Balanced"], ["relaxed", "Relaxed"]], state.confLevel,
+      (v) => { state.confLevel = v; store.save(); render(); }, "hh-small"));
+    gd.appendChild(el("div", "hh-hint", { careful: "Asks unless it's at least 75% sure.", balanced: "Asks below 60%.", relaxed: "Asks only below 45%." }[state.confLevel] || ""));
+    gd.appendChild(settingRow("Read the open design", "When the source is empty, Detect reads the headline on the page and the caption in Notes",
+      !!state.readPage, (on) => { state.readPage = on; store.save(); }));
+    if (state.hlProfile && state.hlProfile.n) {
+      const fr = el("div", "hh-setting");
+      const txt = el("div", "hh-settxt");
+      txt.appendChild(el("div", "hh-setlabel", "Learned headline layout"));
+      txt.appendChild(el("div", "hh-sethint", "From " + state.hlProfile.n + " confirmation" + (state.hlProfile.n === 1 ? "" : "s")
+        + (state.hlProfile.aboveHandle ? " · sits above your @handle" : "")));
+      fr.appendChild(txt);
+      const forget = el("button", "hh-btn small", "Forget");
+      forget.type = "button";
+      forget.onclick = () => { state.hlProfile = null; confirmedEl = null; store.save(); render(); toast("Forgot the headline layout"); };
+      fr.appendChild(forget);
+      gd.appendChild(fr);
+    }
+    body.appendChild(gd);
 
     const g1 = el("div", "hh-group");
     g1.appendChild(el("div", "hh-grouptitle", "Headline"));
@@ -4954,12 +6116,13 @@ weapon=w*apon`;
     const baseSw = el("button", "hh-basesw");
     baseSw.type = "button";
     baseSw.style.background = state.baseColor;
-    baseSw.title = state.baseColor + " \u2014 click to change";
+    baseSw.title = state.baseColor + " — click to change";
+    baseSw.setAttribute("aria-label", "Base colour " + state.baseColor);
     baseSw.onclick = (e) => {
       e.preventDefault();
       const inp = el("input");
       inp.type = "color"; inp.value = state.baseColor; inp.className = "hh-hidden";
-      document.body.appendChild(inp);
+      root.appendChild(inp);
       inp.oninput = () => { state.baseColor = inp.value.toUpperCase(); baseSw.style.background = state.baseColor; store.save(); };
       inp.onchange = () => inp.remove();
       inp.click();
@@ -4997,6 +6160,7 @@ weapon=w*apon`;
       cell.appendChild(el("span", null, label));
       const inp = el("input", "hh-hexin hh-numin");
       inp.type = "number"; inp.min = "-100"; inp.max = "100"; inp.step = "1";
+      inp.dataset.key = "p-" + k;
       inp.value = String(state[k]);
       inp.oninput = () => { state[k] = Math.max(-100, Math.min(100, Math.round(+inp.value || 0))); store.save(); };
       cell.appendChild(inp);
@@ -5011,7 +6175,7 @@ weapon=w*apon`;
       !!state.autoOpenBox, (on) => { state.autoOpenBox = on; store.save(); }));
     g3.appendChild(settingRow("Automation", "Stories from Claude or ChatGPT go in and run by themselves, only on a safe page",
       !!state.autoMode, (on) => { state.autoMode = on; if (on) state.autoOpenBox = true; else stopHold(); store.save(); render(); }));
-    g3.appendChild(settingRow("Wait for the photo", "With Automation on, the run starts once a new photo is in the design \u2014 from PromptSnap or added yourself",
+    g3.appendChild(settingRow("Wait for the photo", "With Automation on, the run starts once a new photo is in the design — from PromptSnap or added yourself",
       !!state.waitPhoto, (on) => { state.waitPhoto = on; store.save(); }));
     g3.appendChild(settingRow("Close side panels first", "Shuts Elements, Notes and the like before a task, so nothing covers the design",
       !!state.closePanels, (on) => { state.closePanels = on; store.save(); }));
@@ -5024,6 +6188,7 @@ weapon=w*apon`;
     g4.appendChild(el("div", "hh-grouptitle", "Your censor list"));
     g4.appendChild(el("div", "hh-hint", "One per line, like kill=k*ll. A built-in list is always applied too. Use word=word to switch one off."));
     const cta = el("textarea", "hh-censor");
+    cta.dataset.key = "s-censor";
     cta.value = state.censorMap;
     cta.spellcheck = false;
     cta.oninput = () => { state.censorMap = cta.value; store.save(); };
@@ -5343,7 +6508,7 @@ weapon=w*apon`;
   }
 
   function resetSize() {
-    state.size = { w: 344, h: null };
+    state.size = { w: 360, h: null };
     store.save();
     render();
     place();          // the width is applied when the panel is placed
@@ -5484,15 +6649,22 @@ weapon=w*apon`;
     wait();
   }
 
+  // Opens the Updates sheet. If the last check is more than half an hour old,
+  // it checks again straight away, so what it shows is current.
   function openUpdates() {
-    state.view = "manual";
-    state.mtab = "settings";
+    sheet = "updates";
     state.compact = false;
     state.collapsed = false;
+    toolMenuOpen = false;
+    confirmClear = false;
     store.save();
     render();
-    const card = root && root.querySelector("#hh-upd");
-    if (card) card.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (!updBusy && Date.now() - (upd.checkedAt || 0) > 30 * 60 * 1000) checkUpdates(false);
+  }
+
+  function closeSheet() {
+    sheet = null;
+    render();
   }
 
   // "2026-10-25" -> "25 Oct 2026" in Chrome's own language.
@@ -5539,20 +6711,23 @@ weapon=w*apon`;
 
   function updList(items, cls, max) {
     const ul = el("ul", "hh-updlist" + (cls ? " " + cls : ""));
-    items.slice(0, max).forEach(t => ul.appendChild(el("li", null, t)));
+    items.slice(0, max).forEach((t, i) => {
+      const li = el("li", null, t);
+      li.style.setProperty("--i", i);
+      ul.appendChild(li);
+    });
     return ul;
   }
 
   function updNotes(box, entries, maxNew, maxFixed) {
     const added = [], fixed = [];
     entries.forEach(e => { added.push(...e.added, ...e.notes); fixed.push(...e.fixed); });
-    const both = added.length && fixed.length;    // a label only helps when there are two lists
     if (added.length) {
-      if (both) box.appendChild(el("div", "hh-updsub", "New"));
+      box.appendChild(el("div", "hh-updsub", "New"));
       box.appendChild(updList(added, "", maxNew));
     }
     if (fixed.length) {
-      if (both || !added.length) box.appendChild(el("div", "hh-updsub", "Fixed"));
+      box.appendChild(el("div", "hh-updsub", "Fixed"));
       box.appendChild(updList(fixed, "fixed", maxFixed));
     }
     const more = Math.max(0, added.length - maxNew) + Math.max(0, fixed.length - maxFixed);
@@ -5565,58 +6740,94 @@ weapon=w*apon`;
     return added.length + fixed.length;
   }
 
-  function updPill(version, label, isNew) {
-    const p = el("span", "hh-pill" + (isNew ? " new" : ""));
-    p.appendChild(el("b", null, version));
-    p.appendChild(el("span", null, label));
-    return p;
+  // Where the update check stands, for the sheet and the header button.
+  function updPhase() {
+    if (updBusy === "check") return "checking";
+    if (updateReady()) return "ready";
+    if (updMsg && UPD_PROBLEMS[updMsg.why]) return "error";
+    if (upd.last && upd.last.ok) return "current";
+    return "idle";
   }
 
-  function renderUpdates(body) {
-    const g = el("div", "hh-group hh-upd" + (updateReady() ? " ready" : ""));
-    g.id = "hh-upd";
+  const UPD_ICON = {
+    idle: TI('<path d="M13 3.5v3.3H9.7"/><path d="M12.6 6.6A5.2 5.2 0 103 9.5"/>'),
+    checking: "",
+    current: '<svg viewBox="0 0 16 16" aria-hidden="true"><path class="hh-draw" d="M3.5 8.4l2.9 2.9 6.1-6.3"/></svg>',
+    ready: TI('<path d="M8 3v7.2M4.9 7.4L8 10.5l3.1-3.1"/><path d="M3.2 13h9.6"/>'),
+    error: TI('<path d="M8 4.2v4.6M8 11.3v.01"/>')
+  };
 
-    const head = el("div", "hh-updhead");
-    head.appendChild(el("div", "hh-grouptitle", "Updates"));
-    const chk = el("button", "hh-btn hh-updcheck", updBusy === "check" ? "Checking…" : "Check for updates");
+  function renderUpdatesSheet(host) {
+    const phase = updPhase();
+    const top = el("div", "hh-sheethead");
+    const back = iconBtn(IC.back, "Back", closeSheet, "hh-sheetback");
+    top.appendChild(back);
+    top.appendChild(el("div", "hh-sheettitle", "Updates"));
+    host.appendChild(top);
+
+    const hero = el("div", "hh-updhero");
+    hero.dataset.phase = phase;
+    const badge = el("div", "hh-updbadge");
+    badge.innerHTML = UPD_ICON[phase] + '<span class="hh-updring"></span>';
+    hero.appendChild(badge);
+    const txt = el("div", "hh-updherotext");
+    const ready = phase === "ready";
+    const titles = {
+      idle: "Check for updates", checking: "Checking for updates…", current: "You're up to date",
+      ready: "Update available", error: "Couldn't check"
+    };
+    let sub = "";
+    if (phase === "checking") sub = "Asking GitHub for the newest version.";
+    else if (phase === "ready") {
+      const d = upd.last.info.date;
+      sub = "Version " + upd.last.latest + " is ready" + (d ? " · published " + niceDate(d) : "") + ".";
+    } else if (phase === "error") sub = UPD_PROBLEMS[updMsg.why];
+    else if (phase === "current") sub = cmpVer(upd.last.latest, INSTALLED) < 0
+      ? "You have " + INSTALLED + ", newer than the published " + upd.last.latest + " · checked " + agoText(upd.checkedAt) + "."
+      : "Version " + INSTALLED + " is the newest · checked " + agoText(upd.checkedAt) + ".";
+    else sub = "Looks for a newer version in the Highlighter's GitHub repo.";
+    txt.appendChild(el("div", "hh-updtitle", titles[phase]));
+    const st = el("div", "hh-updstatus" + (phase === "error" ? " bad" : ""), sub);
+    st.setAttribute("role", "status");
+    st.setAttribute("aria-live", "polite");
+    txt.appendChild(st);
+    hero.appendChild(txt);
+    host.appendChild(hero);
+
+    const vers = el("div", "hh-updvers");
+    const pill = (v, label, cls) => {
+      const p = el("div", "hh-verpill " + (cls || ""));
+      p.appendChild(el("span", "hh-verlabel", label));
+      p.appendChild(el("b", null, v));
+      return p;
+    };
+    vers.appendChild(pill("v" + INSTALLED, "Installed"));
+    vers.appendChild(el("span", "hh-verarrow", "→"));
+    const latest = upd.last && upd.last.ok ? "v" + upd.last.latest : "—";
+    vers.appendChild(pill(latest, "Latest", ready ? "new" : ""));
+    host.appendChild(vers);
+
+    const chk = el("button", "hh-btn hh-updcheck" + (ready ? "" : " primary") + (phase === "checking" ? " busy" : ""));
     chk.type = "button";
+    chk.innerHTML = '<span class="hh-btnspin" aria-hidden="true"></span><span class="hh-btnlabel"></span>';
+    chk.querySelector(".hh-btnlabel").textContent = phase === "checking" ? "Checking…"
+      : phase === "idle" ? "Check for updates" : "Check again";
     chk.disabled = !!updBusy;
     chk.onclick = () => checkUpdates(false);
-    head.appendChild(chk);
-    g.appendChild(head);
+    host.appendChild(chk);
 
-    const ready = updateReady();
-    const pills = el("div", "hh-updpills");
-    pills.appendChild(updPill(INSTALLED, "Installed", false));
-    if (ready) {
-      pills.appendChild(el("span", "hh-updarrow", "→"));
-      pills.appendChild(updPill(upd.last.latest, "New", true));
-    }
-    g.appendChild(pills);
-
-    let status, bad = false;
-    if (updBusy === "check") status = "Asking GitHub…";
-    else if (updMsg && !ready) { status = UPD_PROBLEMS[updMsg.why] || UPD_PROBLEMS.error; bad = updMsg.why !== "empty"; }
-    else if (ready) {
-      const d = upd.last.info.date;
-      status = "Version " + upd.last.latest + " is ready" + (d ? " \u00b7 published " + niceDate(d) : "") + ".";
-    } else if (upd.last && upd.last.ok) status = "You're up to date · checked " + agoText(upd.checkedAt) + ".";
-    else status = "Checks your GitHub repo for a newer version.";
-    const st = el("div", "hh-updstatus" + (bad ? " bad" : ""), status);
-    st.setAttribute("role", "status");
-    g.appendChild(st);
-    if (!ready && !updBusy && updMsg && updMsg.why === "empty") {
+    if (!ready && phase === "error" && updMsg.why === "empty") {
       const open = el("button", "hh-linkbtn", "Open the repo");
       open.type = "button";
       open.onclick = () => askBg({ type: "hh-open-repo" });
-      g.appendChild(open);
+      host.appendChild(open);
     }
 
     if (ready) {
       const news = el("div", "hh-updnotes");
-      if (updNotes(news, updEntries("newer"), 6, 4)) {
-        news.insertBefore(el("div", "hh-updtitle", "What's new"), news.firstChild);
-        g.appendChild(news);
+      if (updNotes(news, updEntries("newer"), 8, 6)) {
+        news.insertBefore(el("div", "hh-updnotestitle", "What's new"), news.firstChild);
+        host.appendChild(news);
       }
 
       const dl = upd.downloaded && upd.downloaded.version === upd.last.latest;
@@ -5633,19 +6844,21 @@ weapon=w*apon`;
         again.onclick = downloadUpdate;
         row.appendChild(again);
       } else {
-        const get = el("button", "hh-btn primary wide", updBusy === "download" ? "Downloading…" : "Download update");
+        const get = el("button", "hh-btn primary wide" + (updBusy === "download" ? " busy" : ""));
         get.type = "button";
+        get.innerHTML = '<span class="hh-btnspin" aria-hidden="true"></span><span class="hh-btnlabel"></span>';
+        get.querySelector(".hh-btnlabel").textContent = updBusy === "download" ? "Downloading…" : "Download update";
         get.disabled = !!updBusy;
         get.onclick = downloadUpdate;
         row.appendChild(get);
       }
-      g.appendChild(row);
-      if (updMsg && UPD_PROBLEMS[updMsg.why]) g.appendChild(el("div", "hh-updstatus bad", UPD_PROBLEMS[updMsg.why]));
+      host.appendChild(row);
+      if (updMsg && UPD_PROBLEMS[updMsg.why]) host.appendChild(el("div", "hh-updstatus bad", UPD_PROBLEMS[updMsg.why]));
 
       const steps = el("div", "hh-updsteps");
       const s1 = el("div", "hh-updstep");
       s1.appendChild(el("span", "hh-updnum", "1"));
-      const t1 = el("div", "hh-updsteptext", "Unzip it, and copy the files into your Highlighter folder, replacing the old ones. ");
+      const t1 = el("div", "hh-updsteptext", "Unzip it and copy the files into your Highlighter folder, replacing the old ones. ");
       const where = el("button", "hh-linkbtn", "Where's my folder?");
       where.type = "button";
       where.title = "Opens the Highlighter's page in Chrome — the folder is next to “Loaded from”";
@@ -5657,21 +6870,23 @@ weapon=w*apon`;
       const s2 = el("div", "hh-updstep");
       s2.appendChild(el("span", "hh-updnum", "2"));
       const t2 = el("div", "hh-updstepact");
-      const rl = el("button", "hh-btn", updBusy === "reload" ? "Reloading…" : "Reload the Highlighter");
+      const rl = el("button", "hh-btn" + (updBusy === "reload" ? " busy" : ""));
       rl.type = "button";
+      rl.innerHTML = '<span class="hh-btnspin" aria-hidden="true"></span><span class="hh-btnlabel"></span>';
+      rl.querySelector(".hh-btnlabel").textContent = updBusy === "reload" ? "Reloading…" : "Reload the Highlighter";
       rl.disabled = !!updBusy || running;
       rl.onclick = reloadHighlighter;
       t2.appendChild(rl);
       t2.appendChild(el("div", "hh-hint", "Your settings stay. Canva and chat tabs refresh."));
       s2.appendChild(t2);
       steps.appendChild(s2);
-      g.appendChild(steps);
+      host.appendChild(steps);
     } else if (upd.last && upd.last.ok) {
       const cur = updEntries("current");
       if (cur.length) {
         const det = el("details", "hh-upddetails");
         det.appendChild(el("summary", null, "In this version"));
-        if (updNotes(det, cur, 12, 12)) g.appendChild(det);
+        if (updNotes(det, cur, 12, 12)) host.appendChild(det);
       }
     }
 
@@ -5680,22 +6895,21 @@ weapon=w*apon`;
       const det = el("details", "hh-upddetails");
       det.appendChild(el("summary", null, "Earlier versions"));
       older.slice(0, 15).forEach(e => {
-        det.appendChild(el("div", "hh-updver", e.version + (e.date ? " \u00b7 " + niceDate(e.date) : "")));
+        det.appendChild(el("div", "hh-updver", e.version + (e.date ? " · " + niceDate(e.date) : "")));
         const items = e.added.concat(e.notes, e.fixed);
         if (items.length) det.appendChild(updList(items, "small", 8));
       });
-      g.appendChild(det);
+      host.appendChild(det);
     }
 
-    g.appendChild(settingRow("Check automatically", "Every 12 hours, quietly", upd.auto !== false, (on) => {
+    host.appendChild(settingRow("Check automatically", "Every 12 hours, quietly, without interrupting you", upd.auto !== false, (on) => {
       upd.auto = on;
       updSave();
       if (on) maybeAutoCheck();
     }));
-    body.appendChild(g);
   }
 
-  // A small notice at the top of Quick when a new version is waiting.
+  // A small notice at the top of Studio when a new version is waiting.
   function renderUpdateBar(view) {
     if (!updateReady()) return;
     const l = upd.last;
@@ -5704,16 +6918,12 @@ weapon=w*apon`;
     bar.setAttribute("role", "status");
     bar.appendChild(el("span", "hh-upddot"));
     bar.appendChild(el("span", "hh-updbartext", "Version " + l.latest + " is ready"));
-    const see = el("button", "hh-btn", "See update");
+    const see = el("button", "hh-btn small", "See what's new");
     see.type = "button";
     see.onclick = openUpdates;
     bar.appendChild(see);
     if (!l.info.required) {
-      const x = el("button", "hh-icon hh-updx", "×");
-      x.type = "button";
-      x.title = "Hide until the next version";
-      x.setAttribute("aria-label", "Hide this notice");
-      x.onclick = () => { upd.dismissed = l.latest; updSave(); render(); };
+      const x = iconBtn(IC.x, "Hide until the next version", () => { upd.dismissed = l.latest; updSave(); render(); }, "hh-updx");
       bar.appendChild(x);
     }
     view.appendChild(bar);
@@ -5721,7 +6931,7 @@ weapon=w*apon`;
 
   function renderFooter() {
     const f = el("div", "hh-foot");
-    f.appendChild(document.createTextNode("Created by Oeng Kimchour · "));
+    f.appendChild(el("span", "hh-footby", "Created by Oeng Kimchour"));
     const v = el("button", "hh-footver" + (updateReady() ? " has-update" : ""), "v" + INSTALLED);
     v.type = "button";
     v.title = updateReady() ? "Version " + upd.last.latest + " is ready" : "Check for updates";
@@ -5769,6 +6979,8 @@ weapon=w*apon`;
       const h = autoHold;
       return h.why === "nohead" ? "Waiting for a page with a headline"
         : h.why === "finished" ? "Waiting for a new page"
+        : h.why === "confirm" ? "Which text is the headline?"
+        : h.why === "check" ? "Confirm the headline first"
         : h.what === "arriving" ? "Photo arriving\u2026"
         : h.what === "checking" ? "Checking the photo\u2026"
         : h.what === "same" ? "Waiting for the new photo" : "Waiting for the photo";
@@ -5857,13 +7069,12 @@ weapon=w*apon`;
     return { cur: +m[1], total: +m[2] };
   }
 
-  // The page's headline: its longest piece of design text.
-  function pageMainHeadline() {
-    // canvasTextCandidates gives { n: element, txt: its text, ... } records.
-    const c = canvasTextCandidates().filter(o => o.txt.replace(/\s+/g, " ").length >= 30);
-    if (!c.length) return null;
-    c.sort((a, b) => b.txt.length - a.txt.length);
-    return c[0].n;
+  // The page's headline, by the same ranking everything else uses: words,
+  // the @handle under it, colour, size and the layout you confirmed. Never just
+  // the longest or the biggest text.
+  function pageMainHeadline(want) {
+    const rk = rankOnPage(want || "");
+    return rk.top ? rk.top.cand.n : null;
   }
 
   // How many colours the headline's letters use (3+ letters each).
@@ -5889,8 +7100,11 @@ weapon=w*apon`;
 
   // Is it safe to run the story on the page that's open now?
   function pageVerdict(headline) {
-    const el = pageMainHeadline();
-    if (!el) return { ok: false, why: "nohead", what: "" };
+    const rk = rankOnPage(headline);
+    if (!rk.top) return { ok: false, why: "nohead", what: "" };
+    // Not sure which text is the headline: ask once rather than run on a guess.
+    if (rk.confidence < confNeed() && state.askConfirm) return { ok: false, why: "confirm", what: rk.top.text.slice(0, 60) };
+    const el = rk.top.cand.n;
     const onPage = storyKey(el.innerText);
     const shown = (el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 60);
     if (onPage && onPage === storyKey(headline)) return { ok: true };            // same story: a re-run
@@ -5950,6 +7164,8 @@ weapon=w*apon`;
 
   // Safe page first, then (with Automation) a new photo in the design.
   function autoReady(headline) {
+    const d = currentDet();
+    if (d && d.meta.needsConfirm && !d.confirmed) return { ok: false, why: "check", what: "" };
     const v = pageVerdict(headline);
     if (!v.ok) return v;
     if (state.waitPhoto && !photoSkip) return photoReady(headline);
@@ -5958,6 +7174,8 @@ weapon=w*apon`;
 
   const holdSay = (h) => h.why === "nohead" ? "waiting for a page with a headline"
     : h.why === "finished" ? "waiting for a new page"
+    : h.why === "confirm" ? "point out the headline on this page once"
+    : h.why === "check" ? "confirm the story's headline first"
     : h.what === "arriving" ? "the photo is coming in"
     : h.what === "checking" ? "checking the photo" : "waiting for the photo";
 
@@ -6030,14 +7248,17 @@ weapon=w*apon`;
     photoWatch = null;
     state.bundle = text;
     state.optionIndex = 0;
-    state.view = "quick";
+    state.view = "studio";
     state.collapsed = false;
+    sheet = null;
     root.style.display = "";
     run = null;
     toolMenuOpen = false;
     confirmClear = false;
+    const d = detectText();
     store.save();
     render();
+    if (d.meta.needsConfirm) flashField("headline");
     const ta = root.querySelector(".hh-paste");
     if (ta) {
       ta.scrollTop = 0;
@@ -6047,9 +7268,13 @@ weapon=w*apon`;
     if (state.autoMode) {
       autoStart(source || "chat");
     } else {
-      toast("Story from " + (source || "chat") + " is ready \u2014 press Run");
+      toast("Story from " + (source || "chat") + " is ready \u2014 " + (d.meta.needsConfirm ? "check the headline, then Run" : "press Run"));
     }
   }
+
+  // For the tests in tests/ui. A content script's window can't be reached by
+  // the page it runs on, so this exposes nothing to Canva.
+  window.__hhTest = { state, rankOnPage, detectText, currentDet, logs: () => logLines.slice() };
 
   store.load(() => {
     if (!state.fillIntroduced) {
@@ -6095,6 +7320,21 @@ weapon=w*apon`;
     if (e.altKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); stepNext(); }
     if (e.key === "Escape" && (toolMenuOpen || confirmClear) && e.isTrusted) {
       toolMenuOpen = false; confirmClear = false; render();
+    } else if (e.key === "Escape" && sheet && e.isTrusted && root && root.contains(document.activeElement)) {
+      closeSheet();
+    }
+    // Alt + K: straight to the Ask box, from anywhere on the page. (Ctrl + K
+    // is Canva's own add-link shortcut, so it's left alone.)
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "k" || e.key === "K" || e.code === "KeyK") && e.isTrusted && root && root.style.display !== "none") {
+      e.preventDefault();
+      e.stopPropagation();
+      state.collapsed = false;
+      state.compact = false;
+      sheet = null;
+      if (state.view !== "studio") state.view = "studio";
+      render();
+      const a = root.querySelector("#hh-askin");
+      if (a) a.focus();
     }
   }, true);
 

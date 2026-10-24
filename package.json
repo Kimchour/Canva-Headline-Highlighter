@@ -1,0 +1,16 @@
+{
+  "name": "canva-headline-highlighter",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Headline Highlighter for Canva: the Chrome extension, its tests and its build.",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "test:ui": "node tests/ui/smoke.js",
+    "bench": "node tests/bench.js --write",
+    "build": "node scripts/build.js",
+    "check": "node --test \"tests/*.test.js\" && node tests/ui/smoke.js && node tests/bench.js --write && node scripts/build.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0"
+  }
+}

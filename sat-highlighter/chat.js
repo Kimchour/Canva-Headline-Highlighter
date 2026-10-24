@@ -8,118 +8,48 @@
 
   const SOURCE = /claude\.ai$/.test(location.hostname) ? "Claude" : "ChatGPT";
 
+  const E = window.HHEngine;
+  if (!E) { console.warn("Headline Highlighter: engine.js didn't load on this page."); return; }
+
   // Each reply is read once and remembered; it's read again only when its
   // text changes. Long chats no longer re-read every old reply on each scan.
   const readCache = new WeakMap();
-  function cachedExtract(n) {  // extract() is hoisted, so this is safe to call early
+  function cachedExtract(n, mode) {  // extract() is hoisted, so this is safe to call early
     const len = (n.textContent || "").length;
+    const key = mode || "strict";
     const c = readCache.get(n);
-    if (c && c.len === len) return c.found;
-    const found = extract(n.innerText || "");
-    readCache.set(n, { len, found });
-    return found;
+    if (c && c.len === len && key in c) return c[key];
+    const entry = c && c.len === len ? c : { len };
+    entry[key] = extract(n, key);
+    readCache.set(n, entry);
+    return entry[key];
   }
-
-
 
   /* ---------- reading a story out of a reply ---------- */
 
-  const KEYS = {
-    headline: "headline", title: "headline", hook: "headline",
-    "short headline": "headline", "main headline": "headline",
-    caption: "caption", "long caption": "caption", "short caption": "caption",
-    "full caption": "caption", "main caption": "caption", body: "caption", story: "caption",
-    hashtags: "tags", hashtag: "tags", tags: "tags", keywords: "tags",
-    sources: "drop", source: "drop", references: "drop", reference: "drop",
-    credit: "drop", credits: "drop", links: "drop", link: "drop", notes: "drop", note: "drop",
-    rating: "drop", why: "drop", "why it works": "drop", angle: "drop"
-  };
-  const TAG_RE = /#[\p{L}\p{N}_]+/gu;
-
-  // "HEADLINE:", "**Headline:**", "## Caption", "Headline: text on the same line".
-  function labelOf(line) {
-    const bare = line.replace(/^[\s#>*_\-]+/, "").replace(/[*_]+/g, "").trim();
-    let m = bare.match(/^([A-Za-z][A-Za-z ]{0,20}?)\s*:\s*(.*)$/);
-    if (m) {
-      const key = KEYS[m[1].trim().toLowerCase()];
-      if (key) return { key, rest: m[2] };
+  // The reply's own structure (headings, bold lines, paragraphs) goes to the
+  // engine, which finds the headline, caption and hashtags with or without
+  // labels and says how sure it is. Only those three ever leave the page:
+  // never the intro, sources, notes or follow-up questions.
+  //   "strict": labelled, or unlabelled but clearly a post with hashtags
+  //   "loose":  anything with a headline and a caption (only when you ask)
+  function extract(node, mode) {
+    let blocks = [];
+    try { blocks = E.collectBlocks(node); } catch (e) { blocks = []; }
+    const text = node.innerText || node.textContent || "";
+    let r = blocks.length ? E.analyze({ blocks }) : E.analyze(text);
+    if (!E.isStory(r, mode)) {
+      const t = E.analyze(text);
+      if (E.isStory(t, mode)) r = t; else return null;
     }
-    // A label alone on its line, without a colon.
-    const key = KEYS[bare.toLowerCase()];
-    if (key && ["headline", "caption", "tags"].includes(key)) return { key, rest: "" };
-    return null;
-  }
-
-  const CHATTER = /^(let me know|want me to|would you like|if you('d| would) like|i can also|happy to|shall i|do you want)/i;
-
-  function readStory(text) {
-    const lines = String(text || "").replace(/\r/g, "").split("\n");
-    const marks = [];
-    lines.forEach((l, i) => { const lab = labelOf(l); if (lab) marks.push({ ...lab, at: i }); });
-
-    const out = {};
-    marks.forEach((mk, i) => {
-      if (mk.key === "drop") return;
-      const end = i + 1 < marks.length ? marks[i + 1].at : lines.length;
-      const chunk = [mk.rest, ...lines.slice(mk.at + 1, end)].join("\n").trim();
-      if (chunk && !out[mk.key]) out[mk.key] = chunk;
-    });
-    if (!out.headline || !out.caption) return null;
-
-    // Only the hashtags themselves travel — never a follow-up question that
-    // happens to sit after them.
-    let tags = out.tags ? (out.tags.match(TAG_RE) || []) : [];
-
-    // Hashtags written straight onto the end of the caption, with no label,
-    // whether or not a blank line separates them from the text.
-    const capLines = out.caption.split("\n");
-    while (capLines.length) {
-      const last = capLines[capLines.length - 1].trim();
-      if (!last) { capLines.pop(); continue; }
-      if (!/^(#[\p{L}\p{N}_]+[\s,]*)+$/u.test(last)) break;
-      tags = (capLines.pop().match(TAG_RE) || []).concat(tags);
-    }
-    let paras = capLines.join("\n").split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-    while (paras.length > 1 && CHATTER.test(paras[paras.length - 1])) paras.pop();
-
-    const headline = out.headline.split("\n").map(s => s.trim()).filter(Boolean).join("\n");
-    const caption = paras.join("\n\n");
-    if (!headline || !caption) return null;
-    return { headline, caption, tags: [...new Set(tags)] };
-  }
-
-  function splitOptions(text) {
-    const lines = String(text || "").split("\n");
-    const marks = [];
-    lines.forEach((l, i) => {
-      const m = l.replace(/^[\s#>*_\-]+/, "").match(/^option\s+(\d+)\b(.*)$/i);
-      if (m) marks.push({ at: i, n: m[1], rating: ((m[2] || "").match(/rated[\s:]*([\d.]+\s*\/\s*\d+)/i) || [])[1] || "" });
-    });
-    if (marks.length < 2) return null;
-    return marks.map((mk, i) => ({
-      n: mk.n, rating: mk.rating,
-      text: lines.slice(mk.at + 1, i + 1 < marks.length ? marks[i + 1].at : lines.length).join("\n")
-    }));
-  }
-
-  const block = (s) => "Headline:\n" + s.headline + "\n\nCaption:\n" + s.caption
-    + (s.tags.length ? "\n\nHashtags:\n" + s.tags.join(" ") : "");
-
-  // Rebuilds a clean block holding only the headline, caption and hashtags.
-  function extract(text) {
-    const opts = splitOptions(text);
-    if (opts) {
-      const good = opts.map(o => ({ o, s: readStory(o.text) })).filter(x => x.s);
-      if (good.length > 1) {
-        return {
-          story: good[0].s, options: good.length,
-          block: good.map(x => "OPTION " + x.o.n + (x.o.rating ? " (Rated " + x.o.rating + ")" : "") + "\n" + block(x.s)).join("\n\n")
-        };
-      }
-      if (good.length === 1) return { story: good[0].s, options: 1, block: block(good[0].s) };
-    }
-    const s = readStory(text);
-    return s ? { story: s, options: 1, block: block(s) } : null;
+    return {
+      story: { headline: r.headline, caption: r.caption, tags: r.hashtags },
+      options: r.options ? r.options.length : 1,
+      block: E.formatBlock(r, { allOptions: true }),
+      labelled: r.strategy === "labels",
+      confidence: r.confidence.overall,
+      method: r.strategyName
+    };
   }
 
   /* ---------- finding the assistant's replies ---------- */
@@ -213,7 +143,8 @@
 
     latest = { key, found };
     if (seen.has(key)) return;
-    if (autoMode && isLive(node) && cardMode !== "busy") { autoSend(found, key); return; }
+    // Only a labelled story goes in by itself; an unlabelled one always asks.
+    if (autoMode && found.labelled && isLive(node) && cardMode !== "busy") { autoSend(found, key); return; }
     if (!cardOpen) { showCard(found, key); return; }
     // An offer you haven't answered is replaced by a newer story. A card that's
     // sending or showing a result is left alone; closing it rescans.
@@ -252,8 +183,14 @@
     chrome.runtime.onMessage.addListener((m) => {
       if (!m || m.type !== "hh-toggle") return;
       if (cardOpen) { closeCard(); return; }
-      if (latest) showCard(latest.found, latest.key);
-      else showEmpty();
+      if (latest) { showCard(latest.found, latest.key); return; }
+      // You asked: look harder at the newest replies, labels or not.
+      const nodes = replies();
+      for (let i = nodes.length - 1; i >= Math.max(0, nodes.length - 4); i--) {
+        const f = cachedExtract(nodes[i], "loose");
+        if (f) { showCard(f, keyOf(f.story)); return; }
+      }
+      showEmpty();
     });
   } catch (e) {}
 
@@ -266,57 +203,72 @@
   const CSS = `
     :host { all: initial; }
     .card {
+      --acc: #ffc93c;
       position: fixed; right: 20px; bottom: 20px; z-index: 2147483000;
-      width: 320px; max-width: calc(100vw - 32px);
+      width: 330px; max-width: calc(100vw - 32px);
       box-sizing: border-box; padding: 14px;
       display: flex; flex-direction: column; gap: 10px;
-      background: #1c1d22; color: #eceef2;
-      border: 1px solid #33363f; border-radius: 12px;
-      box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 20px 48px -12px rgba(0,0,0,.6);
-      font: 12.5px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+      background: radial-gradient(120% 70% at 0% 0%, rgba(255,201,60,.08), transparent 55%), rgba(23,24,30,.94);
+      -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+      color: #eef0f4;
+      border: 1px solid rgba(255,255,255,.09); border-radius: 16px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 24px 60px -18px rgba(0,0,0,.75);
+      font: 12.5px/1.45 Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
-      animation: rise .22s cubic-bezier(.2,.8,.2,1) both;
+      animation: rise .4s cubic-bezier(.34,1.4,.64,1) both;
     }
-    .card.out { animation: fall .18s cubic-bezier(.2,.8,.2,1) both; }
-    .card.swap { animation: swap .32s cubic-bezier(.2,.8,.2,1) both; }
+    .card.out { animation: fall .2s cubic-bezier(.2,.8,.2,1) both; }
+    .card.swap { animation: swap .4s cubic-bezier(.2,.8,.2,1) both; }
     .top { display: flex; align-items: center; gap: 8px; }
-    .dot { width: 9px; height: 9px; border-radius: 3px; background: #ffc93c; flex: 0 0 auto; }
-    .title { flex: 1; font-size: 13px; font-weight: 600; }
-    .x { width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: #a3a7b3; cursor: pointer; font-size: 15px; line-height: 1; }
-    .x:hover { background: #25272e; color: #eceef2; }
+    .logo { width: 20px; height: 20px; border-radius: 6px; background: var(--acc); display: grid; place-items: center; flex: none; }
+    .logo svg { width: 14px; height: 14px; fill: none; stroke: #14151a; stroke-width: 2; stroke-linecap: round; }
+    .title { flex: 1; font-size: 13px; font-weight: 650; }
+    .x { width: 26px; height: 26px; border: 0; border-radius: 8px; background: none; color: #a7abb7; cursor: pointer; font-size: 16px; line-height: 1; transition: background .15s, color .15s; }
+    .x:hover { background: rgba(255,255,255,.07); color: #eef0f4; }
     .head {
-      margin: 0; font-size: 13px; font-weight: 650; line-height: 1.35;
+      margin: 0; padding: 10px 11px; border-radius: 11px; background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.06);
+      font-size: 13px; font-weight: 680; line-height: 1.35;
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     }
     .cells { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; }
-    .cell { padding: 6px 8px; border-radius: 8px; background: #25272e; }
-    .v { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .l { font-size: 11px; color: #6f7381; }
-    .note { font-size: 11.5px; color: #a3a7b3; }
+    .cell { padding: 7px 9px; border-radius: 10px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.05); animation: rise .4s cubic-bezier(.2,.8,.2,1) both; }
+    .cell:nth-child(2) { animation-delay: .04s; } .cell:nth-child(3) { animation-delay: .08s; }
+    .v { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .l { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #6f7482; }
+    .conf { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #a7abb7; }
+    .bar { flex: 1; height: 5px; border-radius: 5px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .bar i { display: block; height: 100%; border-radius: inherit; background: #5ed39a; transform-origin: left; animation: fill .8s cubic-bezier(.2,.8,.2,1) both; }
+    .bar i.mid { background: #f2b84b; } .bar i.low { background: #ef7f72; }
+    .note { font-size: 11.5px; color: #a7abb7; }
+    .note.loose { color: #f2b84b; }
     .row { display: flex; gap: 6px; }
     button.go, button.no {
-      height: 34px; padding: 0 12px; border-radius: 9px; cursor: pointer;
-      font: inherit; font-size: 12.5px; font-weight: 650;
-      transition: filter .12s, background .12s, transform .08s;
+      height: 36px; padding: 0 13px; border-radius: 10px; cursor: pointer;
+      font: inherit; font-size: 12.5px; font-weight: 680;
+      transition: filter .15s, background .15s, transform .15s cubic-bezier(.34,1.4,.64,1), box-shadow .2s;
     }
-    button.go { flex: 1; border: 0; background: #ffc93c; color: #14151a; }
-    button.go:hover { filter: brightness(1.06); }
-    button.go:active, button.no:active { transform: translateY(1px); }
-    button.go:disabled { opacity: .7; cursor: progress; }
-    button.no { border: 1px solid #33363f; background: #25272e; color: #eceef2; }
-    button.no:hover { background: #2c2e36; }
-    button:focus-visible { outline: 2px solid #ffc93c; outline-offset: 1px; }
-    .done { display: flex; align-items: center; gap: 8px; font-weight: 560; }
-    .tick { width: 18px; height: 18px; border-radius: 50%; background: #ffc93c; display: grid; place-items: center; flex: 0 0 auto; }
-    .tick svg { width: 12px; height: 12px; fill: none; stroke: #14151a; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-    .tick path { stroke-dasharray: 14; stroke-dashoffset: 14; animation: draw .3s cubic-bezier(.2,.8,.2,1) .08s forwards; }
-    .warn { color: #ec7b6f; }
-    .foot { margin-top: 2px; padding-top: 8px; border-top: 1px solid #292b32; text-align: center; font-size: 10.5px; letter-spacing: .02em; color: #6f7381; }
-    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    @keyframes fall { to { opacity: 0; transform: translateY(8px); } }
-    @keyframes swap { from { border-color: #ffc93c; opacity: .55; } to { border-color: #33363f; opacity: 1; } }
+    button.go { flex: 1; border: 0; background: linear-gradient(180deg, #ffd45e, var(--acc)); color: #14151a; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 8px 20px -10px rgba(255,201,60,.9); }
+    button.go:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    button.go:active, button.no:active { transform: scale(.97); }
+    button.go:disabled { opacity: .75; cursor: progress; transform: none; }
+    button.no { border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); color: #eef0f4; }
+    button.no:hover { background: rgba(255,255,255,.09); }
+    button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+    .done { display: flex; align-items: center; gap: 9px; font-weight: 600; }
+    .tick { width: 22px; height: 22px; border-radius: 50%; background: #5ed39a; display: grid; place-items: center; flex: 0 0 auto; animation: pop .4s cubic-bezier(.34,1.4,.64,1) both; }
+    .tick svg { width: 13px; height: 13px; fill: none; stroke: #0f2a1d; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+    .tick path { stroke-dasharray: 14; stroke-dashoffset: 14; animation: draw .35s cubic-bezier(.2,.8,.2,1) .12s forwards; }
+    .spin { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -2px; animation: rot .7s linear infinite; }
+    .warn { color: #ef7f72; }
+    .foot { margin-top: 2px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.06); text-align: center; font-size: 10.5px; letter-spacing: .02em; color: #6f7482; }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+    @keyframes fall { to { opacity: 0; transform: translateY(10px) scale(.98); } }
+    @keyframes swap { from { box-shadow: 0 0 0 2px var(--acc), 0 24px 60px -18px rgba(0,0,0,.75); } }
     @keyframes draw { to { stroke-dashoffset: 0; } }
-    @media (prefers-reduced-motion: reduce) { .card, .card.out, .tick path { animation-duration: .001s; } }
+    @keyframes fill { from { transform: scaleX(0); } }
+    @keyframes pop { from { transform: scale(.5); opacity: 0; } }
+    @keyframes rot { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .card, .card *, .card.out { animation-duration: .001s !important; transition-duration: .001s !important; } }
   `;
 
   function mount() {
@@ -333,7 +285,7 @@
     mount();
     shadow.innerHTML = "<style>" + CSS + "</style>"
       + '<div class="card' + (swapped ? " swap" : "") + '" role="dialog" aria-label="Send story to Canva">'
-      + '<div class="top"><span class="dot"></span><span class="title">'
+      + '<div class="top"><span class="logo"><svg viewBox="0 0 16 16"><path d="M5 4v8M11 4v8M5 8h6"/></svg></span><span class="title">'
       + (swapped ? "Newer story in " : "Story found in ") + SOURCE + "</span>"
       + '<button class="x" aria-label="Close">\u00d7</button></div>' + inner
       + '<div class="foot">Created by Oeng Kimchour</div></div>';
@@ -358,6 +310,8 @@
     const s = found.story;
     shownKey = key;
     cardMode = "offer";
+    const c = Math.round((found.confidence || 0) * 100);
+    const lvl = c >= 80 ? "" : c >= 60 ? "mid" : "low";
     frame(
       '<p class="head">' + esc(s.headline.replace(/\s*\n\s*/g, " ")) + "</p>"
       + '<div class="cells">'
@@ -365,6 +319,8 @@
       + '<div class="cell"><div class="v">' + s.caption.length.toLocaleString() + '</div><div class="l">Caption</div></div>'
       + '<div class="cell"><div class="v">' + s.tags.length + '</div><div class="l">Hashtags</div></div>'
       + "</div>"
+      + '<div class="conf"><span>' + esc(found.method || "") + '</span><span class="bar"><i class="' + lvl + '" style="width:' + Math.max(4, c) + '%"></i></span><b>' + c + "%</b></div>"
+      + (found.labelled ? "" : '<div class="note loose">Found without Headline/Caption labels \u2014 check the fields in Canva before you run.</div>')
       + (found.options > 1 ? '<div class="note">' + found.options + " options \u2014 you'll pick one in Canva.</div>" : "")
       + '<div class="note">Only the headline, caption and hashtags go to Canva.</div>'
       + '<div class="row"><button class="go">Send to Canva</button><button class="no">Not now</button></div>',
@@ -375,7 +331,7 @@
     go.onclick = () => {
       cardMode = "busy";
       go.disabled = true;
-      go.textContent = "Sending\u2026";
+      go.innerHTML = '<span class="spin"></span>Sending\u2026';
       let answered = false;
       const done = (res) => {
         if (answered) return;
@@ -430,11 +386,11 @@
 
   function showEmpty() {
     cardMode = "result";
-    frame('<div class="note">No finished story in this chat yet. A reply needs Headline and Caption labels.</div>'
+    frame('<div class="note">No finished story in this chat yet \u2014 a reply needs a headline and a caption.</div>'
       + '<div class="row"><button class="no">OK</button></div>');
     shadow.querySelector(".no").onclick = () => closeCard();
   }
 
   // For tests.
-  window.__hhChatTest = { extract, readStory, scan };
+  window.__hhChatTest = { extract, scan };
 })();
