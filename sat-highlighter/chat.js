@@ -3,13 +3,22 @@
    labels, and offers to send just those parts to the open Canva design. */
 
 (() => {
-  if (window.__hhChat) return;
-  window.__hhChat = true;
+  // One copy per tab. After an update, the copy that was already in the page is
+  // cut off from the extension: it can still find a story but can't send it.
+  // The new copy takes the page over, and the old one steps aside.
+  const DOC = document.documentElement;
+  const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; } };
+  if (window.__hhChat && DOC.getAttribute("data-hh-chat") === window.__hhChat && alive()) return;
 
   const SOURCE = /claude\.ai$/.test(location.hostname) ? "Claude" : "ChatGPT";
 
   const E = window.HHEngine;
   if (!E) { console.warn("Headline Highlighter: engine.js didn't load on this page."); return; }
+  const COPY = Math.random().toString(36).slice(2);
+  window.__hhChat = COPY;
+  DOC.setAttribute("data-hh-chat", COPY);
+  const current = () => DOC.getAttribute("data-hh-chat") === COPY && alive();
+  let retired = false, watcher = null;
 
   // Each reply is read once and remembered; it's read again only when its
   // text changes. Long chats no longer re-read every old reply on each scan.
@@ -141,6 +150,8 @@
 
   function scan() {
     clearTimeout(timer);
+    if (retired) return;
+    if (!current()) { retire(); return; }
     const nodes = replies();
     // "Still writing…": wait for the newest reply to finish before anything.
     if (cardMode === "waiting" && nodes.length && streaming(nodes[nodes.length - 1])) { timer = setTimeout(scan, 1200); return; }
@@ -208,15 +219,35 @@
   }
 
   let pending = null;
-  new MutationObserver(() => {
+  watcher = new MutationObserver(() => {
+    if (!current()) { retire(); return; }
+    dropOld();
     markLive();
     clearTimeout(pending);
     pending = setTimeout(scan, 900);
-  }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["data-is-streaming"] });
+  });
+  watcher.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["data-is-streaming"] });
+
+  // A card an older copy put up can't send anything: only this copy's shows.
+  function dropOld() {
+    for (const c of [...DOC.children]) if (c.id === "hh-chat-host" && c !== host) c.remove();
+  }
+
+  // A newer copy has the page, or this one was cut off by an update: stop
+  // watching. With nothing newer here, an open card says to refresh the tab.
+  function retire() {
+    if (retired) return;
+    retired = true;
+    if (watcher) watcher.disconnect();
+    clearTimeout(timer);
+    clearTimeout(pending);
+    if (DOC.getAttribute("data-hh-chat") !== COPY) { if (host) host.remove(); return; }
+    if (cardOpen && cardMode !== "result") showStale();
+  }
 
   try {
     chrome.runtime.onMessage.addListener((m) => {
-      if (!m || m.type !== "hh-toggle") return;
+      if (!m || m.type !== "hh-toggle" || !current()) return;
       if (cardOpen) { closeCard(); return; }
       // A reply still being written comes first: its story isn't finished,
       // and an older one isn't what you're after.
@@ -383,13 +414,7 @@
         remember(key);
         showResult(res);
       };
-      try {
-        chrome.runtime.sendMessage({ type: "hh-send-story", text: found.block, source: SOURCE }, (res) => {
-          if (chrome.runtime.lastError) { done({ ok: false, why: "error" }); return; }
-          done(res || { ok: false, why: "error" });
-        });
-      } catch (e) { done({ ok: false, why: "error" }); }
-      setTimeout(() => done({ ok: false, why: "slow" }), 12000);
+      send({ type: "hh-send-story", text: found.block, source: SOURCE }, done);
     };
     setTimeout(() => go.focus(), 0);
   }
@@ -402,12 +427,21 @@
       + '<div class="note">Automation is on \u2014 sending to Canva\u2026</div>');
     let answered = false;
     const done = (res) => { if (answered) return; answered = true; showResult(res, true); };
+    send({ type: "hh-send-story", text: found.block, source: SOURCE, auto: true }, done);
+  }
+
+  // Hands the story to the extension. A copy cut off by an update can't:
+  // that's "refresh this tab", not a Canva problem.
+  function send(msg, done) {
+    const stale = () => done({ ok: false, why: "stale" });
+    if (!alive()) { stale(); return; }
     try {
-      chrome.runtime.sendMessage({ type: "hh-send-story", text: found.block, source: SOURCE, auto: true }, (res) => {
-        if (chrome.runtime.lastError) { done({ ok: false, why: "error" }); return; }
+      chrome.runtime.sendMessage(msg, (res) => {
+        const err = chrome.runtime.lastError;
+        if (err) { done({ ok: false, why: !alive() || /context invalidated/i.test(err.message || "") ? "stale" : "error" }); return; }
         done(res || { ok: false, why: "error" });
       });
-    } catch (e) { done({ ok: false, why: "error" }); }
+    } catch (e) { if (!alive() || /context invalidated/i.test(String(e && e.message))) stale(); else done({ ok: false, why: "error" }); }
     setTimeout(() => done({ ok: false, why: "slow" }), 12000);
   }
 
@@ -420,11 +454,25 @@
       setTimeout(() => closeCard(), 3200);
       return;
     }
-    const msg = res && (res.why === "no-canva" || res.why === "no-panel")
+    if (res && res.why === "stale") { showStale(); return; }
+    const msg = res && res.why === "no-canva"
       ? "No Canva design is open. The story is saved and will appear in the Highlighter when you open one."
+      : res && res.why === "no-panel"
+      ? "The Highlighter isn't running in your Canva tab. Refresh that tab \u2014 the story is saved and will appear there."
+      : res && res.why === "slow"
+      ? "Canva didn't answer in time. Check the Canva tab, then try again."
       : "Couldn't reach Canva. Reload the Canva tab and try again.";
     frame('<div class="note ' + (res && res.why === "error" ? "warn" : "") + '">' + msg + "</div>"
       + '<div class="row"><button class="no">OK</button></div>');
+    shadow.querySelector(".no").onclick = () => closeCard();
+  }
+
+  // This copy was cut off by an update (or the extension was switched off).
+  function showStale() {
+    cardMode = "result";
+    frame('<div class="note warn">The Highlighter was updated or switched off, so this tab needs a refresh. Refresh it, then send the story again.</div>'
+      + '<div class="row"><button class="go">Refresh tab</button><button class="no">Not now</button></div>');
+    shadow.querySelector(".go").onclick = () => location.reload();
     shadow.querySelector(".no").onclick = () => closeCard();
   }
 

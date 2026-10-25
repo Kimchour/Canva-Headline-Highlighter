@@ -1,21 +1,35 @@
 {
-  "version": "4.0.0",
+  "version": "4.0.1",
   "date": "2026-10-25",
-  "download": "https://raw.githubusercontent.com/Kimchour/Canva-Headline-Highlighter/b1c40dcb88bf58b3db0a08c779f5f09b2cae435a/canva-headline-highlighter.zip",
+  "download": "https://raw.githubusercontent.com/Kimchour/Canva-Headline-Highlighter/main/canva-headline-highlighter.zip?v=4.0.1",
   "required": false,
   "added": [
-    "A new panel: Studio, Tools and Settings, and an Updates sheet with both versions and the release notes",
-    "Smart Detect finds the headline, caption and hashtags in any post, labelled or not, and shows how sure it is about each",
-    "Edit the detected fields before anything goes to Canva; other headline candidates are one click away",
-    "When it isn't sure which line or text box is the headline, it asks you instead of guessing",
-    "Ask box (Alt + K): say what you want, like “copy the caption and hashtags” or “highlight the title”",
-    "Highlight Headline, Copy All, and Detect on an empty source reading the open design and Notes"
+    "Claude and ChatGPT tabs that were open during an update keep working — no refresh needed",
+    "A tab that can't reach the Highlighter any more says so, with a Refresh button"
   ],
   "fixed": [
-    "Hashtags in Khmer, Hindi and Thai keep their vowel signs; #2024 and run-together hashtags are kept",
-    "A lone reaction line like “This is so wild.” is no longer taken for a headline"
+    "Automation's photo wait: a picture the template already had no longer counts as the new photo",
+    "The assistant's notes (Note:, Why:, Image:) and closing offers stay out of Canva Notes",
+    "A review of your draft (“Clear and punchy. I'd keep it.”) is no longer sent as a story",
+    "Poll choices, kickers like “TRY THIS:” and one-word lines like “Python” stay in your post"
   ],
   "history": [
+    {
+      "version": "4.0.0",
+      "date": "2026-10-25",
+      "added": [
+        "A new panel: Studio, Tools and Settings, and an Updates sheet with both versions and the release notes",
+        "Smart Detect finds the headline, caption and hashtags in any post, labelled or not, and shows how sure it is about each",
+        "Edit the detected fields before anything goes to Canva; other headline candidates are one click away",
+        "When it isn't sure which line or text box is the headline, it asks you instead of guessing",
+        "Ask box (Alt + K): say what you want, like “copy the caption and hashtags” or “highlight the title”",
+        "Highlight Headline, Copy All, and Detect on an empty source reading the open design and Notes"
+      ],
+      "fixed": [
+        "Hashtags in Khmer, Hindi and Thai keep their vowel signs; #2024 and run-together hashtags are kept",
+        "A lone reaction line like “This is so wild.” is no longer taken for a headline"
+      ]
+    },
     {
       "version": "3.4.0",
       "date": "2026-10-25",

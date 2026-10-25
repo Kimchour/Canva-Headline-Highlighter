@@ -503,6 +503,12 @@
   .hh-small .hh-segopt { font-size: 10px; letter-spacing: -.02em; }
 }
 
+/* An old copy after an update: refresh the tab. */
+.hh-root .hh-stale { display: grid; gap: 8px; padding: 16px; }
+.hh-root .hh-staletitle { font-weight: 650; font-size: 13.5px; color: var(--text); }
+.hh-root .hh-staletext { color: var(--muted); line-height: 1.45; }
+.hh-root .hh-stale .hh-btn { justify-self: start; }
+
 /* ---------- Detected ---------- */
 
 .hh-detect.empty { padding: 14px 12px; border-style: dashed; background: transparent; }

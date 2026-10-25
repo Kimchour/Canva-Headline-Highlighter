@@ -255,8 +255,9 @@ It's careful about these things:
   until you confirm it under Detected.
 - **It waits for the photo.** With **Wait for the photo** on (Settings -> Canva, on by
   default), the run starts only once a new photo is in the design - sent from PromptSnap
-  or added yourself. A blank template waits. A copied page still showing the last post's
-  photo waits for the new one. A photo that's still uploading waits until it has fully
+  or added yourself. A blank template waits. A picture the page already had when you opened
+  it - a template's sample photo, a background - doesn't count, wherever it sits. A copied
+  page still showing the last post's photo waits for the new one. A photo that's still uploading waits until it has fully
   loaded and stayed the same for 2 seconds. **Run now** starts without the photo; **Stop
   waiting** cancels.
 - **It never resends old stories.** Only a labelled story it watched being written is sent
@@ -287,6 +288,10 @@ the reply stays behind - the intro, sources, notes, and follow-up questions like
 to write another version?". Your own messages, and anything in the message box, are never
 picked up. If the reply has several numbered options, all of them are sent and you pick
 one in Canva.
+
+Tabs that were open when the Highlighter updated get the new version straight away, so
+there's nothing to refresh. If a tab can't reach the Highlighter any more (it was switched
+off, say), the card or the panel says so and offers **Refresh tab**.
 
 If you ask for another story while an earlier card is still waiting, the card switches to
 the newest one once it finishes - it says "Newer story" so you know it changed.

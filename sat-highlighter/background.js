@@ -166,14 +166,20 @@ function afterReload() {
   if (!afterReloadRun) afterReloadRun = doAfterReload();
   return afterReloadRun;
 }
+// Answers with the tabs it refreshes (so they aren't also given the new
+// copy), then refreshes them.
 async function doAfterReload() {
   let r = null;
-  try { r = (await chrome.storage.local.get("hhReloading")).hhReloading; } catch (e) { return; }
-  if (!r) return;
+  try { r = (await chrome.storage.local.get("hhReloading")).hhReloading; } catch (e) { return []; }
+  if (!r) return [];
   await chrome.storage.local.remove("hhReloading");
-  if (Date.now() - (r.at || 0) > 2 * 60 * 1000) return;
+  if (Date.now() - (r.at || 0) > 2 * 60 * 1000) return [];
+  refreshAfterReload(r.tabs || []);
+  return (r.tabs || []).map(t => t.id).concat(r.self ? [r.self] : []);
+}
+async function refreshAfterReload(tabs) {
   const busy = [];
-  for (const t of r.tabs || []) {
+  for (const t of tabs) {
     if (/^https:\/\/www\.canva\.com\/design\//i.test(t.url)) { chrome.tabs.reload(t.id).catch(() => {}); continue; }
     if (await chatBusy(t.id)) busy.push(t.id);
     else chrome.tabs.reload(t.id).catch(() => {});
@@ -185,8 +191,31 @@ async function doAfterReload() {
       if (!(await chatBusy(busy[k]))) { chrome.tabs.reload(busy[k]).catch(() => {}); busy.splice(k, 1); }
     }
   }
+  // Still writing after all that: give it the new copy instead of cutting the reply off.
+  for (const id of busy) giveNewCopy({ id, url: "https://claude.ai/" });
 }
-chrome.runtime.onInstalled.addListener(() => { afterReload(); });
+
+// Tabs that were open when the Highlighter was installed or updated have no
+// copy, or an old one cut off from the extension ("Couldn't reach Canva"):
+// give them the new one, so nothing needs refreshing.
+async function giveNewCopy(t) {
+  const canva = /^https:\/\/www\.canva\.com\/design\//i.test(t.url || "");
+  try {
+    if (canva) await chrome.scripting.insertCSS({ target: { tabId: t.id }, files: ["panel.css"] });
+    await chrome.scripting.executeScript({ target: { tabId: t.id }, files: canva ? ["engine.js", "intent.js", "content.js"] : ["engine.js", "chat.js"] });
+  } catch (e) {}
+}
+async function newCopiesEverywhere(skip) {
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({ url: CANVA_TABS.concat(CHAT_TABS) }); } catch (e) { return; }
+  // A tab Chrome put to sleep loads afresh when you open it.
+  for (const t of tabs) if (t.id && !t.discarded && t.status !== "unloaded" && !skip.includes(t.id)) giveNewCopy(t);
+}
+
+chrome.runtime.onInstalled.addListener(async (d) => {
+  const refreshing = await afterReload();
+  if (d && (d.reason === "install" || d.reason === "update")) newCopiesEverywhere(refreshing || []);
+});
 afterReload();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

@@ -409,6 +409,74 @@ async function runDone(page) {
     check("Run's label stands out on coral (3:1 or better)", ratio >= 3, ratio.toFixed(2));
   });
 
+  // Automation's photo wait: a picture the page already had (a template's
+  // sample photo, a background) is not the new photo.
+  const picture = (page, color, opts) => page.evaluate(({ color, o }) => {
+    const c = document.createElement("canvas"); c.width = 480; c.height = 360;
+    const g = c.getContext("2d"); g.fillStyle = color; g.fillRect(0, 0, 480, 360);
+    const im = o.id && document.getElementById(o.id) || new Image();
+    im.src = c.toDataURL("image/png");
+    if (!im.isConnected) {
+      im.id = o.id || "";
+      // A background sits behind the text, as in Canva.
+      im.style.cssText = "position:absolute;left:0;top:0;width:480px;height:" + (o.h || 360) + "px;z-index:" + (o.z || 2) + (o.h ? ";pointer-events:none" : "");
+      document.getElementById("stage").appendChild(im);
+    }
+  }, { color, o: opts || {} });
+  const story = (page) => page.evaluate((t) => window.__onMsg({ type: "hh-story", text: t, source: "Claude" }, {}, () => {}), LABELLED);
+  const pastes = (page) => page.evaluate(() => window.__pastes || 0);
+  const autoSeed = () => seed({ autoMode: true, waitPhoto: true });
+
+  await scenario("Automation waits for a new photo, not the template's", autoSeed(), null, async (page) => {
+    await picture(page, "#777", { id: "tpl", z: 1 });
+    await page.waitForTimeout(4500);
+    await story(page);
+    await page.waitForTimeout(4500);
+    check("a sample photo already in the template doesn't start the run", (await pastes(page)) === 0 && /pictures this page already had/.test(await text(page, ".hh-root") || ""));
+    await picture(page, "#3a7", { id: "new" });
+    await page.waitForTimeout(5500);
+    await runDone(page);
+    check("the new photo starts it", (await pastes(page)) > 0);
+  });
+
+  await scenario("Automation: a background picture, then the photo swapped into the frame", autoSeed(), null, async (page) => {
+    await picture(page, "#555", { id: "tpl", z: 1, h: 600 });
+    await page.waitForTimeout(4500);
+    await story(page);
+    await page.waitForTimeout(4500);
+    check("a background picture doesn't start the run", (await pastes(page)) === 0);
+    await picture(page, "#a33", { id: "tpl" });
+    await page.waitForTimeout(5500);
+    await runDone(page);
+    check("a new picture in the same frame starts it", (await pastes(page)) > 0);
+  });
+
+  await scenario("Automation: the photo added before the story", autoSeed(), null, async (page) => {
+    await picture(page, "#777", { id: "tpl", z: 1 });
+    await page.waitForTimeout(4500);
+    await picture(page, "#3a7", { id: "new" });
+    await page.waitForTimeout(1000);
+    await story(page);
+    await page.waitForTimeout(5500);
+    await runDone(page);
+    check("the story runs on the photo that's already there", (await pastes(page)) > 0);
+  });
+
+  // After an update the copy already in a tab is cut off from the extension.
+  await scenario("Canva: an old copy after an update", seed(), null, async (page) => {
+    await page.evaluate(() => { window.__savedId = chrome.runtime.id; chrome.runtime.id = undefined; });
+    await page.waitForTimeout(2200);
+    check("a cut-off copy says to refresh the tab", /Refresh this tab/.test(await text(page, ".hh-root") || ""));
+    // In Chrome the new copy runs in a fresh world: it doesn't see the old one's globals.
+    await page.evaluate(() => { chrome.runtime.id = window.__savedId; delete window.__hhLoaded; });
+    for (const f of ["engine.js", "intent.js", "content.js"]) await page.addScriptTag({ content: read(f) });
+    await page.waitForTimeout(800);
+    check("the new copy takes over: one panel, no refresh notice", (await page.locator(".hh-root").count()) === 1 && (await page.locator(".hh-stale").count()) === 0);
+    await paste(page, LABELLED);
+    const out = await ask(page, "copy the caption");
+    check("…and it works", /Copied the caption/.test(out), out);
+  });
+
   // ChatGPT puts a post in a code block when asked: a language label and a
   // Copy button sit above the code.
   console.log("A post in a ChatGPT code block");
@@ -434,6 +502,47 @@ async function runDone(page) {
     const sent = await cp.evaluate(() => window.__sent.filter(m => m.type === "hh-send-story").map(m => m.text));
     check("the post is found and sent without the code block's label", sent.length === 1 && /^Headline:\nFAMILY STUNNED/.test(sent[0]) && !/plaintext/.test(sent[0]), JSON.stringify(sent[0] || "").slice(0, 80));
     check("A post in a ChatGPT code block: no script errors", !cerr.length, cerr.join(" | "));
+    await cctx.close();
+  }
+
+  // A chat tab open during an update: its copy is cut off from the extension.
+  console.log("A chat tab during an update");
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+    const cp = await cctx.newPage();
+    const cerr = [];
+    cp.on("pageerror", (e) => cerr.push(String(e)));
+    await cp.addInitScript(STUB({ hh: { autoMode: false } }));
+    await cp.goto(base + "/tests/fixtures/chat-mock.html");
+    for (const f of ["engine.js", "chat.js"]) await cp.addScriptTag({ content: read(f) });
+    await cp.waitForTimeout(800);
+    const post = (h) => cp.evaluate((h) => {
+      const d = document.createElement("div");
+      d.setAttribute("data-message-author-role", "assistant");
+      d.innerHTML = "<p>Headline: " + h + "</p><p>Caption: When Max slipped out of the yard in 2023, the Parkers searched for months. Last week a shelter called.</p><p>Hashtags: #dogs #reunited</p>";
+      document.getElementById("thread").appendChild(d);
+    }, h);
+    const cards = () => cp.evaluate(() => [...document.documentElement.children].filter(c => c.id === "hh-chat-host" && c.shadowRoot && c.shadowRoot.querySelector(".card")).map(c => c.shadowRoot.querySelector(".card").innerText));
+    await post("FAMILY STUNNED AS LOST DOG RETURNS HOME AFTER THREE YEARS");
+    await cp.waitForFunction(() => { const h = document.getElementById("hh-chat-host"); return h && h.shadowRoot && h.shadowRoot.querySelector(".card .go"); }, null, { timeout: 8000 }).catch(() => {});
+    // Cut off with its card up: Send says to refresh, not "Couldn't reach Canva".
+    await cp.evaluate(() => { window.__savedId = chrome.runtime.id; chrome.runtime.id = undefined; document.getElementById("hh-chat-host").shadowRoot.querySelector(".go").click(); });
+    await cp.waitForTimeout(300);
+    const said = (await cards()).join(" ");
+    check("Send in a cut-off tab says to refresh it", /needs a refresh/.test(said) && /Refresh tab/.test(said) && !/Couldn't reach Canva/.test(said), said.slice(0, 120));
+    // The new copy arrives (the background gives it to open tabs after an update).
+    await cp.evaluate(() => { chrome.runtime.id = window.__savedId; delete window.__hhChat; });
+    for (const f of ["engine.js", "chat.js"]) await cp.addScriptTag({ content: read(f) });
+    await post("PILOT DIVERTS FLIGHT AFTER PASSENGER REFUSES TO SIT DOWN");
+    await cp.waitForFunction(() => [...document.documentElement.children].some(c => c.id === "hh-chat-host" && c.shadowRoot && /PILOT DIVERTS/.test((c.shadowRoot.querySelector(".card") || {}).innerText || "")), null, { timeout: 10000 }).catch(() => {});
+    await cp.waitForTimeout(300);
+    const after = await cards();
+    check("the new copy takes over: one card, for the new story", after.length === 1 && /PILOT DIVERTS/.test(after[0]), JSON.stringify(after).slice(0, 160));
+    await cp.evaluate(() => document.getElementById("hh-chat-host").shadowRoot.querySelector(".go").click());
+    await cp.waitForTimeout(400);
+    const sent = await cp.evaluate(() => window.__sent.filter(m => m.type === "hh-send-story").map(m => m.text));
+    check("…and it sends", sent.length === 1 && /PILOT DIVERTS/.test(sent[0]), JSON.stringify(sent).slice(0, 100));
+    check("A chat tab during an update: no script errors", !cerr.length, cerr.join(" | "));
     await cctx.close();
   }
 

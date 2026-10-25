@@ -19,7 +19,7 @@ does to `tests/fixtures/corpus.js` and it is checked from then on.
 | Mean confidence when right / wrong | 0.93 / 0.58 |
 | Task: “copy the caption and hashtags” exact | 97.5% |
 | Hand-written corpus cases passing | 42 / 42 |
-| Response time (mean / p95 / max) | 0.80 ms / 1.67 ms / 34.01 ms |
+| Response time (mean / p95 / max) | 0.90 ms / 1.93 ms / 44.84 ms |
 
 ## By layout
 

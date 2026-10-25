@@ -4,8 +4,16 @@
    so coloring is one click instead of a drag. */
 
 (() => {
-  if (window.__hhLoaded) return;
-  window.__hhLoaded = true;
+  // One copy per tab. After an update, the copy already in the page is cut off
+  // from the extension and its panel does nothing: a new copy takes the page
+  // over (the old panel, rings and notices go), and an old one steps aside.
+  const DOC = document.documentElement;
+  const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; } };
+  if (window.__hhLoaded && DOC.getAttribute("data-hh-panel") === window.__hhLoaded && alive()) return;
+  const COPY = Math.random().toString(36).slice(2);
+  window.__hhLoaded = COPY;
+  const current = () => DOC.getAttribute("data-hh-panel") === COPY && alive();
+  let retired = false;
 
   /* ---------- defaults ---------- */
 
@@ -4272,22 +4280,8 @@ weapon=w*apon`;
     // it, the fade could be taken for the photo.
     const he = headlineEl() || headlineAny() || pageMainHeadline();
     const hr = he ? textRect(he) : null;          // the letters, not the box around them
-    const side = [findColorPanel(), findNotesPanel(), findEditImagePanel(), findAdjustPanel()].filter(Boolean);
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const imgs = [...document.querySelectorAll("img, svg image")].filter(n => {
-      if (mine(n) || !visible(n)) return false;
-      if (n.closest('a,[href],nav,header,button,[role="button"]')) return false;
-      if (side.some(p => p.contains(n))) return false;
-      const r = shownRect(n);
-      if (r.width < 120 || r.height < 80) return false;
-      if (r.right <= 0 || r.bottom <= 0 || r.left >= vw || r.top >= vh) return false;
-      if (hr) {
-        const ov = Math.min(r.right, hr.right) - Math.max(r.left, hr.left);
-        if (ov < Math.min(r.width, hr.width) * 0.5) return false;
-      }
-      return true;
-    }).map(n => ({ n, r: shownRect(n) }));
-    if (!imgs.length) return { photo: null, fade: null, hr };
+    const imgs = designImages(hr);
+    if (!imgs.length) return { photo: null, fade: null, hr, photos: [] };
 
     const bottom = Math.max(...imgs.map(i => i.r.bottom));
     const widest = Math.max(...imgs.map(i => i.r.width));
@@ -4301,7 +4295,28 @@ weapon=w*apon`;
     const fade = imgs.find(isFade) || null;
     const rest = imgs.filter(i => i !== fade);
     rest.sort((a, b) => (a.r.top - b.r.top) || (b.r.width * b.r.height - a.r.width * a.r.height));
-    return { photo: rest[0] || null, fade, hr };
+    return { photo: rest[0] || null, fade, hr, photos: rest };
+  }
+
+  // The big pictures shown on the design (not the panel's, Canva's side
+  // panels or its buttons). With the headline's letters given, only those in
+  // its column: a picture beside the design isn't its photo.
+  function designImages(hr) {
+    const side = [findColorPanel(), findNotesPanel(), findEditImagePanel(), findAdjustPanel()].filter(Boolean);
+    const vw = window.innerWidth, vh = window.innerHeight;
+    return [...document.querySelectorAll("img, svg image")].filter(n => {
+      if (mine(n) || !visible(n)) return false;
+      if (n.closest('a,[href],nav,header,button,[role="button"]')) return false;
+      if (side.some(p => p.contains(n))) return false;
+      const r = shownRect(n);
+      if (r.width < 120 || r.height < 80) return false;
+      if (r.right <= 0 || r.bottom <= 0 || r.left >= vw || r.top >= vh) return false;
+      if (hr) {
+        const ov = Math.min(r.right, hr.right) - Math.max(r.left, hr.left);
+        if (ov < Math.min(r.width, hr.width) * 0.5) return false;
+      }
+      return true;
+    }).map(n => ({ n, r: shownRect(n) }));
   }
 
   // Is the selected layer the bottom fade? That's the only wrong pick that
@@ -4555,6 +4570,8 @@ weapon=w*apon`;
   }
 
   function build() {
+    DOC.setAttribute("data-hh-panel", COPY);
+    document.querySelectorAll(".hh-root, .hh-layer, .hh-notice").forEach(n => n.remove());
     root = el("div", "hh-root hh-appear");
     root.setAttribute("dir", "ltr");
     setTimeout(() => root.classList.remove("hh-appear"), 400);
@@ -5011,6 +5028,7 @@ weapon=w*apon`;
   }
 
   function render() {
+    if (retired) return;
     const keep = focusKey();
     const oldBody = wrap.querySelector(".hh-body");
     const oldScroll = oldBody ? oldBody.scrollTop : 0;
@@ -5945,6 +5963,8 @@ weapon=w*apon`;
       ? "The story's headline isn't clear. Confirm it under Detected and the run starts."
       : h.what === "same"
       ? "This page still has the last post's photo. Send the new one from PromptSnap and the run starts by itself."
+      : h.what === "template"
+      ? "No new photo yet — the pictures this page already had don't count. Send it from PromptSnap, or add it yourself, and the run starts by itself."
       : h.what === "arriving"
       ? "A new photo is coming into the design. The run starts as soon as it has fully loaded."
       : h.what === "checking"
@@ -6204,6 +6224,8 @@ weapon=w*apon`;
         const pp = pagePhoto();
         state.lastPost = { key: storyKey(state.text || b.headline), text: E._.flat(state.text || b.headline),
           page: pn ? pn.cur : null, photo: pp ? photoKey(pp.src) : null };
+        // That photo is this page's now: it doesn't count as new for the next story.
+        if (pp) photoBase().keys.add(photoKey(pp.src));
       }
       photoSkip = false;
       store.save();
@@ -7601,30 +7623,68 @@ weapon=w*apon`;
   // address without it — otherwise a copied old photo could pass as new.
   const photoKey = (src) => String(src || "").split(/[?#]/)[0];
 
+  const imgSrc = (n) => n.currentSrc || n.src || n.getAttribute("href") || n.getAttribute("xlink:href") || "";
+  const photoOf = (n) => ({ n, src: imgSrc(n), loaded: n.tagName === "IMG" ? (n.complete && n.naturalWidth > 0) : true });
+
   function pagePhoto() {
     const { photo } = photoAndFade();
-    if (!photo) return null;
-    const n = photo.n;
-    const src = n.currentSrc || n.src || n.getAttribute("href") || n.getAttribute("xlink:href") || "";
-    const loaded = n.tagName === "IMG" ? (n.complete && n.naturalWidth > 0) : true;
-    return { n, src, loaded };
+    return photo ? photoOf(photo.n) : null;
   }
 
   let photoWatch = null;        // { key, since } while a new photo settles
   let photoSkip = false;        // "Run without the photo" was pressed
 
+  // The pictures a page already had when you opened it are the template's — a
+  // sample photo, a background, a fade, a logo — or the last post's on a
+  // copied page. None of them is the new photo, wherever it sits. Recorded for
+  // the page in view: the first few seconds after it comes into view (Canva
+  // draws a page's pictures a moment after showing it), and again whenever
+  // another page, or a new page count, comes into view.
+  const photoBases = new Map();     // page -> { keys, until }
+  let basePageAt = 0, basePage = "";
+  function photoPageId() {
+    // Finding the page counter means reading the whole page: not more than
+    // every few seconds when it isn't there.
+    if (!(pageCounterEl && pageCounterEl.isConnected) && Date.now() - basePageAt < 4000) return basePage;
+    basePageAt = Date.now();
+    const pn = pageNumber();
+    basePage = location.pathname + "|" + (pn ? pn.cur + "/" + pn.total : "");
+    return basePage;
+  }
+  function photoBase() {
+    const id = photoPageId();
+    let b = photoBases.get(id);
+    if (!b) {
+      // A page added or taken away moves the others: start their records over.
+      const parts = (k) => { const [path, pg] = k.split("|"); return path + "|" + ((pg || "").split("/")[1] || ""); };
+      for (const k of [...photoBases.keys()]) if (parts(k) !== parts(id)) photoBases.delete(k);
+      b = { keys: new Set(), until: Date.now() + 4000 };
+      photoBases.set(id, b);
+    }
+    if (Date.now() <= b.until) designImages(null).forEach(i => { const k = photoKey(imgSrc(i.n)); if (k && !/^blob:/i.test(k)) b.keys.add(k); });
+    return b;
+  }
+
   // Is a new photo in the design, fully loaded and steady for 2 seconds?
   // While uploading, Canva often swaps a quick preview for the final image,
   // which restarts the 2 seconds — so the run never starts on a half-loaded photo.
   function photoReady(headline) {
-    const p = pagePhoto();
-    if (!p || !p.src) { photoWatch = null; return { ok: false, why: "photo", what: "none" }; }
-    const key = photoKey(p.src);
+    const base = photoBase();
+    const all = (photoAndFade().photos || []).map(i => photoOf(i.n)).filter(p => p.src);
+    if (!all.length) { photoWatch = null; return { ok: false, why: "photo", what: "none" }; }
     const lp = state.lastPost;
     // A different story still showing the last post's photo must wait. The
     // same story again is fine: that photo is its own.
     const sameStory = lp && headline && lp.key === storyKey(headline);
-    if (lp && lp.photo && key === lp.photo && !sameStory) { photoWatch = null; return { ok: false, why: "photo", what: "same" }; }
+    const own = (k) => sameStory && lp.photo && k === lp.photo;
+    const fresh = all.filter(p => { const k = photoKey(p.src); return own(k) || (!base.keys.has(k) && !(lp && lp.photo && k === lp.photo)); });
+    if (!fresh.length) {
+      photoWatch = null;
+      const old = lp && lp.photo && all.some(p => photoKey(p.src) === lp.photo);
+      return { ok: false, why: "photo", what: old ? "same" : "template" };
+    }
+    const p = fresh.find(x => photoWatch && photoKey(x.src) === photoWatch.key) || fresh[0];
+    const key = photoKey(p.src);
     // blob: is how Chrome shows an image that is still uploading.
     if (!p.loaded || /^blob:/i.test(p.src)) { photoWatch = null; return { ok: false, why: "photo", what: "arriving" }; }
     if (!photoWatch || photoWatch.key !== key) {
@@ -7653,7 +7713,7 @@ weapon=w*apon`;
     : h.what === "checking" ? "checking the photo" : "waiting for the photo";
 
   async function autoStart(source) {
-    if (!state.autoMode || running) return;
+    if (retired || !state.autoMode || running) return;
     const b = quickBundle();
     if (!b || !b.headline) return;
     const v = autoReady(b.headline);
@@ -7662,7 +7722,7 @@ weapon=w*apon`;
       toast(from + holdSay(v));
       autoHold = { why: v.why, what: v.what };
       if (!holdTimer) holdTimer = setInterval(() => {
-        if (!autoHold || !state.autoMode) { stopHold(); render(); return; }
+        if (retired || !autoHold || !state.autoMode) { stopHold(); render(); return; }
         const bb = quickBundle();
         if (!bb || !bb.headline) return;
         const r = autoReady(bb.headline);
@@ -7747,6 +7807,26 @@ weapon=w*apon`;
     }
   }
 
+  // A newer copy has the page, or an update cut this one off: stop. With
+  // nothing newer here, the panel says to refresh the tab.
+  function retire() {
+    if (retired) return;
+    stopHold();
+    retired = true;
+    if (DOC.getAttribute("data-hh-panel") !== COPY) { [root, layer, noticeEl].forEach(n => n && n.remove()); return; }
+    if (!root || !wrap) return;
+    wrap.innerHTML = "";
+    const box = el("div", "hh-stale");
+    box.appendChild(el("div", "hh-staletitle", "Refresh this tab"));
+    box.appendChild(el("div", "hh-staletext", "The Highlighter was updated or switched off, so the copy in this tab can't do anything now. Refresh the tab to carry on \u2014 your settings stay."));
+    const b = el("button", "hh-btn primary", "Refresh tab");
+    b.type = "button";
+    b.onclick = () => location.reload();
+    box.appendChild(b);
+    wrap.appendChild(box);
+    root.style.display = "";
+  }
+
   // For the tests in tests/ui. A content script's window can't be reached by
   // the page it runs on, so this exposes nothing to Canva.
   window.__hhTest = { state, rankOnPage, detectText, currentDet, pageVerdict, logs: () => logLines.slice() };
@@ -7765,6 +7845,14 @@ weapon=w*apon`;
     state.tokens = tokenize(state.text || "");
     build();
     startUpdates();
+    // Note the pictures each page has when it comes into view, so the photo
+    // wait knows them from a new one.
+    const notePage = () => {
+      if (!current()) { retire(); return; }
+      if (!document.hidden && state.waitPhoto) photoBase();
+    };
+    notePage();
+    setInterval(notePage, 1500);
     if (queuedStory) { receiveStory(queuedStory.text, queuedStory.source); queuedStory = null; }
     // A story sent while no Canva design was open waits here.
     try {
@@ -7792,6 +7880,7 @@ weapon=w*apon`;
   } catch (e) {}
 
   window.addEventListener("keydown", (e) => {
+    if (retired) return;
     // Typing in Canva (or any field outside the panel): Option+K and Option+N
     // are letters there, not shortcuts.
     const ae = document.activeElement;
@@ -7821,7 +7910,7 @@ weapon=w*apon`;
   }, true);
 
   document.addEventListener("mousedown", (e) => {
-    if (!toolMenuOpen || !e.isTrusted) return;
+    if (retired || !toolMenuOpen || !e.isTrusted) return;
     const m = document.getElementById("hh-toolmenu");
     const b = document.getElementById("hh-toolbtn");
     if ((m && m.contains(e.target)) || (b && b.contains(e.target))) return;

@@ -7,6 +7,20 @@ and takes stories from Claude or ChatGPT straight into Canva.
 **To install or update, use `canva-headline-highlighter.zip`** — the user guide is in
 [`sat-highlighter/README.md`](sat-highlighter/README.md).
 
+## What's new in 4.0.1
+
+- **Chat tabs keep working after an update.** A Claude or ChatGPT tab that was open when
+  the Highlighter updated now gets the new version straight away. Before, its card said
+  "Couldn't reach Canva" until you refreshed the tab. A tab that can't reach the
+  Highlighter any more (switched off, say) tells you to refresh it, with a button.
+- **The photo wait waits for a new photo.** With Automation, a picture the page already had
+  (a template's sample photo, a background) no longer counts: the run starts when a photo
+  arrives that wasn't there when you opened the page.
+- **Cleaner Notes.** The assistant's notes ("Note:", "Why:", "Image:") and closing offers
+  ("Would you like a few alternative headlines?", "Hope this helps!") are left out; a post's
+  own calls to action ("Comment BREAD below 👇"), poll choices and kickers ("TRY THIS:")
+  stay. A review of your draft is no longer sent as a story.
+
 ## What's new in 4.0
 
 - **A new panel**: Studio, Tools and Settings in a glass panel, with an Updates sheet that
