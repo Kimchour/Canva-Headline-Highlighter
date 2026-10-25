@@ -58,7 +58,7 @@ module.exports = [
   { say: "no, copy the caption", steps: [["copy", ["caption"]]] },
   { say: "no", steps: [["reanalyze"]] },
   { say: "not that one", steps: [["reanalyze"]] },
-  { say: "no thanks", steps: [] },
+  { say: "no thanks", steps: [["skip"]] },
   { say: "highlight the caption", steps: [["unsupported"]] },
   // what to undo, and a field rather than the whole panel
   { say: "undo the line up", steps: [["undo"]] },
@@ -92,6 +92,29 @@ module.exports = [
   { say: "drop the caption in the notes", steps: [["notes"]] },
   { say: "set the headline to option two", steps: [["option"]], n: 2 },
   { say: "change the headline to the one from option 2", steps: [["option"]], n: 2 },
+  // "don't" with a word between, or an object that's also a verb
+  { say: "please don't go and fill the notes", steps: [["skip"]] },
+  { say: "don't automatically run it", steps: [["skip"]] },
+  { say: "don't you dare run it", steps: [["skip"]] },
+  { say: "don't run the highlight", steps: [["skip"]] },
+  { say: "don't update the notes", steps: [["skip"]] },
+  { say: "why didn't it run", steps: [["skip"]] },
+  { say: "update the notes", steps: [["notes"]] },
+  // "forget it", "stop", "leave it": nothing — never the last action again
+  { say: "forget it", ctx: { lastOp: "highlight", lastFields: ["headline"] }, steps: [["skip"]] },
+  { say: "stop it", ctx: { lastOp: "highlight", lastFields: ["headline"] }, steps: [["skip"]] },
+  { say: "no, don't do that", ctx: { lastOp: "copy", lastFields: ["caption"] }, steps: [["skip"]] },
+  { say: "leave it as it is", ctx: { lastOp: "highlight", lastFields: ["headline"] }, steps: [["skip"]] },
+  { say: "never mind", steps: [["skip"]] },
+  { say: "no, not that", ctx: { lastOp: "highlight", lastFields: ["headline"] }, steps: [["reanalyze"]] },
+  { say: "stop automation", steps: [["automation"]] },
+  { say: "forget the hashtags", ctx: { lastOp: "copy", lastFields: ["headline", "caption", "hashtags"] }, steps: [["copy", ["headline", "caption"]]] },
+  // clearing: one field, the others, or Canva's Notes (not ours to empty)
+  { say: "reset the hashtags", steps: [["clearfield"]] },
+  { say: "clear everything except the headline", steps: [["clearfield"]] },
+  { say: "clear the notes", steps: [["unsupported"]] },
+  { say: "reverse the line up", steps: [["undo"]] },
+  { say: "reverse the order of the hashtags", steps: [["extract", ["hashtags"]]] },
   // not understood: must say so rather than guess
   { say: "blah blah", steps: [] },
   { say: "what is the weather like", steps: [] }

@@ -19,7 +19,7 @@ does to `tests/fixtures/corpus.js` and it is checked from then on.
 | Mean confidence when right / wrong | 0.93 / 0.58 |
 | Task: “copy the caption and hashtags” exact | 97.5% |
 | Hand-written corpus cases passing | 42 / 42 |
-| Response time (mean / p95 / max) | 0.94 ms / 1.89 ms / 30.82 ms |
+| Response time (mean / p95 / max) | 0.80 ms / 1.67 ms / 34.01 ms |
 
 ## By layout
 
@@ -56,7 +56,7 @@ Without labels, a card comes up unasked only for a heading, or a first or bold l
 
 | Measure | Result |
 |---|---|
-| Instructions turned into the right plan | 86 / 86 |
+| Instructions turned into the right plan | 106 / 106 |
 | Headline ranking: right box, or asked when it couldn't tell | 48 / 48 |
 | Headline ranking: never acted on a wrong box | 48 / 48 |
 

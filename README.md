@@ -78,6 +78,9 @@ publishing it.
 1. Bump `version` in `sat-highlighter/manifest.json` and `package.json`.
 2. In `version.json`, set `version`, `date` and `added` / `fixed` (3.x shows at most six
    new and four fixed items, so keep to that); move the previous entry into `history`.
+   Set `download` back to `main`'s zip for now,
+   `https://raw.githubusercontent.com/<owner>/<repo>/main/canva-headline-highlighter.zip?v=<version>`:
+   a link still pointing at the last release's commit stops the build.
 3. `npm test && npm run build` — the build stops if `version.json` and the manifest
    disagree.
 4. Commit everything, including the new zip. Then set `download` in `version.json` to that

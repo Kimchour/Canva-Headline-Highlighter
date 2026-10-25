@@ -53,7 +53,7 @@
 /* Inside scrolling or folding rows a ring outside the box gets cut off. */
 .hh-root .hh-switch:focus-visible, .hh-root .hh-sug:focus-visible, .hh-root .hh-tagx:focus-visible { outline-offset: -2px; }
 /* An inset accent ring vanishes on a switch that's on (its track is the accent). */
-.hh-root .hh-switch.on:focus-visible { outline-color: var(--text); }
+.hh-root .hh-switch.on:focus-visible { outline-color: var(--accent-ink); }
 .hh-root textarea:focus-visible, .hh-root input:focus-visible { outline: none; }
 .hh-root svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .hh-root kbd {
@@ -402,7 +402,8 @@
 }
 .hh-sugs::-webkit-scrollbar { display: none; }
 .hh-sug { flex: none; }
-.hh-sugs.inline { flex-wrap: wrap; -webkit-mask-image: none; mask-image: none; }
+.hh-sugs.inline, .hh-sugs.end { -webkit-mask-image: none; mask-image: none; }
+.hh-sugs.inline { flex-wrap: wrap; }
 .hh-sugs.hide { display: none; }
 .hh-sug {
   padding: 4px 10px; border-radius: 999px;
@@ -497,6 +498,9 @@
   .hh-acts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hh-acts.hh-acts3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hh-small .hh-segopt { padding: 4px 1px; font-size: 10.5px; letter-spacing: -.01em; }
+}
+@container (max-width: 272px) {
+  .hh-small .hh-segopt { font-size: 10px; letter-spacing: -.02em; }
 }
 
 /* ---------- Detected ---------- */

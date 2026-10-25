@@ -5,7 +5,8 @@
    update check would then tell everyone to update forever. When the download
    link points at a commit, that commit must hold this exact zip for this
    version: a link left over from the last release, or to a commit that was
-   never pushed, would hand out the wrong zip.
+   never pushed, would hand out the wrong zip. (The zip is still written then,
+   so it can be committed.)
 
    The zip is the same bytes every time for the same files (its dates come
    from version.json), so building again after the release commit changes
@@ -76,6 +77,11 @@ const end = Buffer.alloc(22);
 end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10);
 end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
 const zip = Buffer.concat(parts.concat([cd, end]));
+// Written first: when the link's commit doesn't hold this zip, this is the zip
+// to commit next.
+fs.writeFileSync(OUT, zip);
+const built = "Built " + path.relative(ROOT, OUT) + " — version " + manifest.version + ", " + FILES.length + " files, "
+  + Math.round(zip.length / 1024) + " KB.";
 
 const pinned = String(vj.download).match(/\/([0-9a-f]{40})\/canva-headline-highlighter\.zip$/);
 if (pinned) {
@@ -85,8 +91,6 @@ if (pinned) {
   try { atSha = git("show", pinned[1] + ":canva-headline-highlighter.zip"); mfAtSha = JSON.parse(git("show", pinned[1] + ":sat-highlighter/manifest.json").toString()); }
   catch (e) { fail("version.json's download link points at commit " + pinned[1].slice(0, 7) + ", which this repo doesn't have with a zip in it. Commit and push the zip first, then point the link at that commit."); }
   if (mfAtSha.version !== vj.version) fail("version.json's download link points at a commit with version " + mfAtSha.version + ", not " + vj.version + " — it's left over from an earlier release.");
-  if (!atSha.equals(zip)) fail("The zip at commit " + pinned[1].slice(0, 7) + " isn't this build. Commit this zip, then point the download link at that commit.");
+  if (!atSha.equals(zip)) fail("The zip at commit " + pinned[1].slice(0, 7) + " isn't this build. The new zip is written: commit it, then point the download link at that commit.");
 }
-fs.writeFileSync(OUT, zip);
-console.log("Built " + path.relative(ROOT, OUT) + " — version " + manifest.version + ", " + FILES.length + " files, "
-  + Math.round(fs.statSync(OUT).size / 1024) + " KB.");
+console.log(built);

@@ -18,19 +18,22 @@
     ["automation_off", /\b(?:(?:turn|switch) off automation|(?:turn|switch) automation off|disable automation|automation off|stop automation)\b/],
     // "clear the hashtags" empties that field; "clear" alone is the whole panel.
     // Not "delete the caption's last line": that's an edit, not emptying it.
-    ["clearfield", /\b(?:clear|remove|delete|empty|drop|erase|wipe|get rid of)(?: out)?(?: the| my| all(?: the)?)? (?:headlines?|titles?|captions?|hash ?tags?|tags)\b(?!'s|’s| (?:last |first )?(?:line|lines|sentence|sentences|word|words|emoji|emojis|paragraph|paragraphs)\b)/],
-    ["clear", /\b(?:clear(?: (?:it|all|everything|the box))?|reset|start over|start again|new post|wipe|empty the box|next post)\b/],
+    ["clearfield", /\b(?:clear|remove|delete|empty|drop|erase|wipe|reset|get rid of)(?: out)?(?: the| my| all(?: the)?)? (?:headlines?|titles?|captions?|hash ?tags?|tags)\b(?!'s|’s| (?:last |first )?(?:line|lines|sentence|sentences|word|words|emoji|emojis|paragraph|paragraphs)\b| (?:hash ?tags?|tags|headline|title|caption)\b)/],
+    // Not "clear the caption's hashtags": that names a field.
+    ["clear", /\b(?:clear(?: (?:it|all|everything|the box))?(?! (?:the |my )?(?:caption|headline|title|hash ?tags?|tags|notes)\b)|reset(?! (?:the |my )?(?:caption|headline|title|hash ?tags?|tags|notes)\b)|start over|start again|new post|wipe(?! (?:the |my )?(?:caption|headline|title|hash ?tags?|tags|notes)\b)|empty the box|next post)\b/],
+    // Canva's own Notes: not something to empty from here.
+    ["clearnotes", /\b(?:clear|empty|wipe|erase|delete|reset)(?: out)?(?: the| my| all(?: the)?)? notes\b/],
     ["navigate", /\b(?:go to|go back to|open|show(?: me)?|take me to|switch to|back to)(?: the| my)? (?:settings|options|preferences|tools|studio|home)\b/],
     ["confirm", /^(?:yes|yep|yeah|correct|right|that'?s (?:it|right|correct|the one)|confirm|looks good|use (?:it|that|this)|ok(?:ay)?|good|perfect)\b/],
     // Bare "again", "no" and "not the" are everyday words in other commands
     // ("copy the caption again", "not the caption"): on their own they count
     // as "look again" (see wholeAsk), not here.
     ["reanalyze", /\b(?:fix(?: (?:it|the selection|that|this|the headline|the detection))?|re-?analy[sz]e|re-?detect|re-?check|re-?scan|re-?do|redo|retry|try again|wrong(?: one| headline| title)?|incorrect|that'?s not (?:it|right|correct|the (?:right )?(?:one|headline|title))|isn'?t (?:it|right|correct|the (?:right )?(?:one|headline|title))|not (?:that|this) one|other one|different one|next (?:one|candidate)|another (?:one|candidate)|correct (?:the|it|this)|look again|pick another)\b/],
-    ["undo", /\b(?:undo|put (?:it )?back|revert|take (?:it )?back|reverse)\b/],
+    ["undo", /\b(?:undo|put (?:it )?back|revert|take (?:it )?back|reverse(?= (?:the |that |my )?(?:line ?-?up|alignment|photo fill|fill|highlight|run|changes?)\b))\b/],
     ["locate", /\b(?:locate|where(?:'?s| is| are)|point (?:to|at|out)|show (?:me )?where|which (?:one|text|box) is)\b/],
     ["highlight", /\b(?:highlight|colou?r(?: in)?|paint|mark|emphasi[sz]e|accent)\b/],
     // Only with a verb: "what's in the notes?" must not overwrite them.
-    ["notes", /\b(?:(?:fill|send|put|write|paste|add|update|drop|move|copy)(?: [a-z]+){0,3} (?:in|into|to) (?:the )?notes|fill (?:in )?(?:the )?notes)\b/],
+    ["notes", /\b(?:(?:fill|send|put|write|paste|add|update|drop|move|copy)(?: [a-z]+){0,3} (?:in|into|to) (?:the )?notes|fill (?:in )?(?:the )?notes|(?:update|overwrite|replace) (?:the )?notes)\b/],
     ["lineup", /\b(?:line(?:s)? (?:it |them )?up|line-?up|align(?:ment)?|cent(?:er|re)|fit (?:the )?(?:headline|title|text|it))\b/],
     ["fill", /\b(?:fill (?:the )?(?:page|design|it|frame)?\s*(?:with (?:the )?(?:photo|image|picture))|fill with photo|photo fill)\b/],
     ["photo", /\b(?:enhance|improve|sharpen|adjust|auto-?adjust)(?: (?:the|my))? (?:photo|image|picture)|(?:photo|image|picture) (?:enhance|adjust)/],
@@ -92,24 +95,30 @@
 
   // Instructions that only mean this when they are all you wrote.
   const WHOLE = [
-    ["reanalyze", /^(?:no|nope|nah|again|wrong|one more time|repeat(?: it| that)?|do (?:it|that) again|not (?:it|that|this|right)|not (?:that|this|the right) one|not the (?:right )?(?:one|headline|title))(?: please)?$/],
+    ["reanalyze", /^(?:(?:no|nope|nah) )?(?:no|nope|nah|again|wrong|one more time|repeat(?: it| that)?|do (?:it|that) again|not (?:it|that|this|right)|not (?:that|this|the right) one|not the (?:right )?(?:one|headline|title))(?: please)?$/],
     ["run", /^(?:ok(?:ay)? )?(?:go|go ahead|go for it)$/]
   ];
+  // "forget it", "stop", "leave it", "no thanks": nothing to do, and never the
+  // last action again on "it".
+  const STOP_RE = /^(?:(?:no|nah|nope|oh|wait|hmm|ok(?:ay)?|actually) )*(?:(?:forget(?: about)?|stop|skip|cancel|never ?mind|leave|keep|drop|don'?t(?: do)?|dont(?: do)?|do not(?: do)?)(?: (?:it|that|this|them))?(?: (?:as (?:it|they) (?:is|are|was|were)|alone|then|please|for now|now|thanks|thank you))*|(?:no|nah|nope) (?:thanks|thank you))$/;
   const REPEAT_RE = /^(?:again|try again|retry|one more time|repeat(?: it| that)?|do (?:it|that) again)$/;
 
   // "don't run it", "stop the run", "without highlighting": the verb is off.
   // Only small words may sit between: "don't run it", "stop the run", "don't
   // even copy it" — never "not sure but run it" or "stop and run it".
-  const NEG_VERB = /(?:^| )(?:don'?t|do not|never|not|stop|without|skip|avoid|instead of|rather than|no|forget)(?: (?:it|them|the|this|that|yet|now|just|even|ever|really|please|you|to|a|an|my|any|about))* ?$/;
+  const NEG_VERB = /(?:^| )(?:don'?t|dont|do not|never|not|stop|without|skip|avoid|instead of|rather than|no|forget|didn'?t|did not|shouldn'?t|should not|mustn'?t|must not)(?: (?:it|them|the|this|that|yet|now|even|ever|really|actually|automatically|immediately|do|go|go and|bother|try|please|you|you dare|dare|under any circumstances|to|a|an|my|any|about))* ?$/;
   // "no need to run it" and "I don't want you to fill notes" say "don't";
   // "don't forget to fill notes" says "please".
   const POSITIVE_RE = /\b(?:(?:don'?t|do not) (?:forget|hesitate)(?: to)?|remember to|make sure (?:to|you)|be sure to)\b/g;
-  const NEGATIVE_RE = /\b(?:there'?s )?(?:no need to|(?:i )?(?:don'?t|do not) (?:want|need)(?: you)? to)\b/g;
+  // "I don't want it to run yet", "I don't want this run" — but "I don't want
+  // the hashtags" still means everything else.
+  const NEGATIVE_RE = /\b(?:there'?s )?(?:no need to|(?:i )?(?:don'?t|do not) (?:want|need) (?:(?:you|it|this|that) (?:to )?|to ))/g;
   // "not the caption", "everything except the hashtags": the field is out.
-  const NEG_TARGET = /(?:^| )(?:not|no|without|except|excluding|exclude|minus|but|apart from|other than|leave out|leave off|skip)(?: (?:the|my|any|its|their))? ?$/;
+  const NEG_TARGET = /(?:^| )(?:not|no|without|except|excluding|exclude|minus|but|apart from|other than|leave out|leave off|skip|dont|forget(?: about)?)(?: (?:the|my|any|its|their))? ?$/;
   const NEG_WORDS = /(?:^| )(?:don'?t|do not|never|not|stop|without|skip|avoid|instead of|rather than|except|excluding|exclude|minus|apart from|other than|leave out|leave off|forget|dont)(?= |$)/g;
   // "go ahead", "do it" answering "Go ahead?" (or the card) means yes.
-  const GO_YES = /^(?:(?:ok(?:ay)?|yes|yeah|yep|sure)\s*)?(?:go|go ahead|go for it|do it|proceed|please do|yes please|sure|carry on|continue|ok(?:ay)? go)$/;
+  const GO_YES = /^(?:go|go ahead|go for it|do it|proceed|go on|carry on|continue|do that)(?: (?:go|go ahead|go for it|do it|proceed|go on|carry on|continue|do that))*$/;
+  const YES_FILLER = /\b(?:ok(?:ay)?|alright|all right|fine|yes|yeah|yep|sure|please|just|let'?s|then|now|and)\b/g;
 
   // Every match of every pattern, then the longest non-overlapping ones.
   function scan(text, table) {
@@ -171,7 +180,7 @@
     if (!m) return null;
     const k = m[1].toLowerCase();
     const field = /^(headline|title)$/.test(k) ? "headline" : k === "caption" ? "caption" : "hashtags";
-    const said = m[2].trim();
+    const said = m[2].trim().replace(/^[:=\-–—]\s*/, "");
     const quoted = /^["“'][\s\S]*["”']$/.test(said);
     const value = said.replace(/^["“'](.*)["”']$/s, "$1");
     if (!quoted) {
@@ -184,7 +193,7 @@
       }
       if (OTHER_RE.test(v)) return { op: "reanalyze" };
       // "option two", "the one from option 2", "whatever version 2 says"
-      const om = v.split(" ").length <= 7 && v.match(/\b(?:option|version)\s*#?\s*(\d{1,2}|one|two|three|four|five|[a-e])\b/);
+      const om = v.match(/^(?:the one (?:from|in|of|on|at) |whatever |what |the (?:headline|caption|text|title|one) (?:from|in|of) )?(?:the )?(?:option|version)\s*#?\s*(\d{1,2}|one|two|three|four|five|[a-e])(?: (?:says|has|is|one))?$/);
       if (om) return { op: "option", n: /^\d/.test(om[1]) ? +om[1] : SPELLED[om[1]] || ORDINALS[om[1]] };
     }
     // A few words led by "the" / "my" ("the new text", "the one on the
@@ -208,6 +217,7 @@
       if (s.op === "navigate") return "Open " + s.view;
       if (s.op === "undo" && s.what && s.what.length) return "Undo " + [].concat(s.what).map(w => UNDO_WHAT[w] || (OP_LABEL[w] || w).toLowerCase()).join(" + ");
       if (s.op === "unsupported") return "Can't " + s.what;
+      if (s.op === "skip" && !(s.what && s.what.length)) return "Nothing — leave it as it is";
       if (s.op === "skip") return "Nothing — you said not to " + (s.what || []).map(w => (OP_LABEL[w] || w).toLowerCase()).join(" or ");
       if (s.op === "run" && s.skip && s.skip.length) return base + " without " + s.skip.map(w => (OP_LABEL[w] || w).toLowerCase()).join(" or ");
       if (s.op === "strength") return "Highlight " + s.level;
@@ -220,15 +230,23 @@
   function parse(input, ctx) {
     ctx = ctx || {};
     const raw = String(input || "").trim();
-    const text = prep(raw).replace(POSITIVE_RE, "please").replace(NEGATIVE_RE, "dont").replace(/\s+/g, " ").trim();
+    const text = prep(raw).replace(POSITIVE_RE, "please").replace(NEGATIVE_RE, "dont ").replace(/\s+/g, " ").trim();
     const plain = bare(text);
     const out = { input: raw, steps: [], understood: false, confidence: 0, summary: "", followUp: false, unknown: [] };
+    const skipped = [];
     if (raw === "?") { out.steps = [{ op: "help" }]; out.understood = true; out.confidence = 1; out.summary = "Help"; return out; }
     if (!text) return out;
 
     // "go ahead" answering the panel's question
-    if ((ctx.pendingGate || ctx.pendingAsk) && GO_YES.test(plain)) {
+    const yesCore = plain.replace(YES_FILLER, " ").replace(/\s+/g, " ").trim();
+    if ((ctx.pendingGate || ctx.pendingAsk) && (!yesCore || GO_YES.test(yesCore))) {
       out.steps = [{ op: "confirm" }];
+      out.understood = true; out.confidence = 1; out.summary = describe(out.steps);
+      return out;
+    }
+
+    if (STOP_RE.test(plain)) {
+      out.steps = [{ op: "skip" }];
       out.understood = true; out.confidence = 1; out.summary = describe(out.steps);
       return out;
     }
@@ -267,29 +285,44 @@
       const tokens = verbs.map(v => ({ kind: "v", ...v })).concat(targets.map(t => ({ kind: "t", ...t })))
         .sort((a, b) => a.at - b.at);
       const steps = [];
-      let pending = [], pendingEx = [], prevEnd = 0;
+      let pending = [], pendingEx = [], prevEnd = 0, verbEnd = 0, place = false;
       tokens.forEach(tk => {
-        const before = text.slice(Math.max(prevEnd, text.lastIndexOf(",", tk.at - 1) + 1), tk.at);
+        // A verb's "don't" may sit before an "it" ("why didn't it run").
+        const before = text.slice(Math.max(tk.kind === "v" ? verbEnd : prevEnd, text.lastIndexOf(",", tk.at - 1) + 1), tk.at);
         const gap = text.slice(prevEnd, tk.at);
         prevEnd = Math.max(prevEnd, tk.end);
         if (tk.kind === "v") {
+          verbEnd = tk.end;
           const step = { op: tk.key, text: tk.text, at: tk.at, end: tk.end, targets: pending, exclude: pendingEx, joined: [] };
           pending = []; pendingEx = [];
           const prev = steps[steps.length - 1];
           // "don't highlight it or run it": the "don't" covers both.
-          if (NEG_VERB.test(before) || (prev && prev.neg && /^(?: (?:it|them|that|this|the [a-z]+))? (?:or|nor)(?: (?:the|to))? $/.test(gap))) step.neg = true;
+          if (NEG_VERB.test(before) || (prev && prev.neg && /^(?:(?: (?:it|them|that|this|the [a-z]+))? (?:or|nor)(?: (?:the|to))?| (?:the|a|an|my|that|this)) $/.test(gap))) step.neg = true;
           steps.push(step);
           return;
         }
         const last = steps[steps.length - 1];
         const ex = NEG_TARGET.test(before);
+        const joinedOn = /^(?: ?(?:and|,|plus)(?: the| my)?)+ $/.test(gap);
+        // "from the caption", "in the caption and headline": places, not targets.
+        place = /(?:from|in|into|inside|on|of|out of)(?: the| my)? $/.test(gap) || (place && joinedOn);
         if (last) {
           (ex || last.neg ? last.exclude : last.targets).push(tk.key);
-          // "clear the caption and hashtags": joined straight on, not "from the caption".
-          if (!ex && /^(?: ?(?:and|,|plus)(?: the| my)?)+ $/.test(gap)) last.joined.push(tk.key);
+          // "clear the caption and hashtags": joined straight on.
+          if (!ex && !place && joinedOn) last.joined.push(tk.key);
+          // "delete the title from the caption": part of a field. (Hashtags
+          // "from the caption" are their own field, so that's fine.)
+          if (place && last.op === "clearfield" && !/tag/.test(last.text)) last.partial = true;
         } else (ex ? pendingEx : pending).push(tk.key);
       });
       steps.forEach(s => { s.own = s.targets.slice(); });
+      // "Yes, but don't fill the notes": a yes, with that step left out.
+      if (ctx.pendingConfirm && steps.length > 1 && steps[0].op === "confirm" && steps.slice(1).every(s => s.neg)) {
+        out.steps = [{ op: "confirm" }];
+        out.off = uniq(steps.slice(1).map(s => s.op));
+        out.understood = true; out.confidence = 1; out.summary = describe(out.steps) + " without " + out.off.map(w => (OP_LABEL[w] || w).toLowerCase()).join(" or ");
+        return out;
+      }
       // Verbs with nothing between them share the next targets.
       for (let i = steps.length - 2; i >= 0; i--) {
         if (!steps[i].targets.length && !steps[i].neg && !steps[i + 1].neg && steps[i + 1].targets.length && ["copy", "extract", "detect", "highlight", "locate"].includes(steps[i].op)) {
@@ -307,7 +340,9 @@
         while (i + 1 < steps.length) {
           const b = steps[i + 1];
           const gap = text.slice(end, b.at);
-          if (b.neg || !UNDOABLE.includes(b.op) || !/^(?: (?:the|my|that|this|last|a|and|photo|fill))* ?$/.test(gap)) break;
+          if (b.neg || !UNDOABLE.includes(b.op)) break;
+          // Only articles between, or "… and the line up" (a thing, not an action).
+          if (!/^(?: (?:the|my|that|this|last|a|photo|fill))* ?$/.test(gap) && !/^(?: (?:the|my|that|this|last|a|photo|fill))* and (?:the|my|that|this|last|a)(?: photo)? $/.test(gap)) break;
           if (/\bfill\b/.test(gap)) a.what.push("fill");
           a.what.push(b.op);
           end = b.end;
@@ -332,6 +367,7 @@
         if (!ts.length && allEx.length) ts = (ctx.lastFields && ctx.lastFields.length ? ctx.lastFields : ALL).slice();
         live.push({ op, targets: ts, exclude: allEx, own: ts.slice() });
         out.followUp = !!ctx.lastOp;
+        out.verbless = true;
       }
       // A number on its own: pick an option, or another headline candidate.
       if (!live.length && n) {
@@ -371,9 +407,16 @@
             if (s.op === "highlight" && offOps.includes("lineup")) s.align = false;
             break;
           }
+          case "clear":
+            // "clear everything except the headline": only the others.
+            if (fieldsOnly(ex).length) { s.op = "clearfield"; s.fields = ALL.filter(f => !fieldsOnly(ex).includes(f)); }
+            break;
+          case "clearnotes": s.op = "unsupported"; s.what = "empty Canva's Notes — do that in Canva"; break;
           case "clearfield":
-            // Only the field it names, and any joined straight on; never one
-            // after "from", "in" or "keep".
+            // "delete the title from the caption" edits part of a field: that's
+            // for you to do under Detected.
+            if (s.partial) { s.what = "remove part of a field — edit it under Detected"; s.op = "unsupported"; break; }
+            // Only the field it names, and any joined straight on.
             s.fields = ALL.filter(f => fieldsInWords(s.text).includes(f) || fieldsOnly(s.joined || []).includes(f));
             break;
           case "navigate":
@@ -395,17 +438,37 @@
           case "automation_on": s.op = "automation"; s.on = true; break;
           case "automation_off": s.op = "automation"; s.on = false; break;
           case "confirm": if (!ctx.pendingConfirm) s.op = "noop"; break;
-          case "notes": s.fields = ["caption", "hashtags"]; break;
+          case "notes": {
+            // Notes takes the caption and hashtags; "copy the headline to notes"
+            // can't put the headline there.
+            const named = fieldsInWords(s.text);
+            if (named.length && !named.includes("caption") && !named.includes("hashtags")) { s.op = "unsupported"; s.what = "put the headline in Notes — Notes takes the caption and hashtags"; break; }
+            s.fields = ["caption", "hashtags"];
+            break;
+          }
           case "run": {
-            // "run it but don't fill the notes": that step is left out.
+            // "run it but don't fill the notes", "run everything except the
+            // notes": that step is left out.
             const off = offOps.filter(o => ["notes", "highlight", "lineup", "fill", "photo", "censor"].includes(o));
-            if (off.length) s.skip = off;
+            const STEP_WORDS = { notes: /notes/, highlight: /highlight|colou?r/, lineup: /line ?up|lining up|align/,
+              fill: /photo fill|fill(?:ing)? (?:the )?(?:page|design|frame)|fill(?:ing)? with/, photo: /(?:enhanc|adjust|improv)\w* (?:the )?(?:photo|image|picture)|\bphoto\b(?! fill)/, censor: /censor/ };
+            const SKIP_RE = /\b(?:except|without|but not|not|no|minus|skip(?:ping)?|leave out|apart from|(?:don'?t|dont|do not|never) (?:touch|change|modify|include|use|do|mess with|bother with)|(?:leave|keep)(?= (?:the |my |any )?(?:[a-z]+ ){0,2}(?:alone|as (?:is|it is|they are)|untouched|unchanged)\b))(?: the| any| my)? ((?:[a-z]+ ?){1,3})/g;
+            for (const x of text.matchAll(SKIP_RE)) {
+              Object.keys(STEP_WORDS).forEach(k => {
+                const w = x[0].match(STEP_WORDS[k]);
+                if (!w) return;
+                off.push(k);
+                // Understood: the "without" and the step it names.
+                skipped.push([x.index, x.index + x[0].length - x[1].length], [x.index + w.index, x.index + w.index + w[0].length]);
+              });
+            }
+            if (off.length) s.skip = uniq(off);
             break;
           }
           default: break;
         }
         if (!s.fields) delete s.fields;
-        ["targets", "exclude", "own", "text", "at", "end", "neg", "joined"].forEach(k => delete s[k]);
+        ["targets", "exclude", "own", "text", "at", "end", "neg", "joined", "partial"].forEach(k => delete s[k]);
       });
 
       // "use option 2" / "take version 3": only the option, not also a pick
@@ -440,9 +503,10 @@
     if (whole) mark(0, text.length);
     scan(text, VERBS).concat(scan(text, TARGETS)).forEach(h => mark(h.at, h.end));
     let m;
+    skipped.forEach(([a, b]) => mark(a, b));
     NEG_WORDS.lastIndex = 0;
     while ((m = NEG_WORDS.exec(text))) mark(m.index, m.index + m[0].length);
-    const FILLER = /^(?:the|a|an|and|then|please|pls|now|also|too|for|me|my|to|of|from|on|in|this|that|it|just|only|can|you|could|would|i|want|need|with|all|both|page|design|canvas|canva|template|again|one|ok|okay|so|then|first|next|after|that|as|well|plus|is|are|be|some|its|out|up|real|quick|quickly|thanks|thank|make|do|use|pick|take|try|option|version|candidate|number|no|second|third|fourth|fifth|last|1st|2nd|3rd|4th|5th|hey|hi|yet|but|not|instead|except|without|go|ahead|let's)$/;
+    const FILLER = /^(?:the|a|an|and|then|please|pls|now|also|too|for|me|my|to|of|from|on|in|this|that|it|just|only|can|you|could|would|i|want|need|with|all|both|page|design|canvas|canva|template|again|one|ok|okay|so|then|first|next|after|that|as|well|plus|is|are|be|some|its|out|up|real|quick|quickly|thanks|thank|make|do|use|pick|take|try|option|version|candidate|number|no|second|third|fourth|fifth|last|1st|2nd|3rd|4th|5th|hey|hi|yet|but|not|instead|except|without|go|ahead|let's|alone|untouched|unchanged|they)$/;
     let left = 0, total = 0;
     text.split(" ").reduce((pos, w) => {
       const at = text.indexOf(w, pos);

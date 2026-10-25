@@ -38,3 +38,28 @@ test("what an instruction leaves alone", () => {
   // "go ahead" on its own, with nothing to answer, is still a run.
   assert.strictEqual(IN.parse("go ahead").steps[0].op, "run");
 });
+
+test("a run leaves out the steps you name, however you say it", () => {
+  for (const say of ["run it but not the notes", "run it without the notes", "run everything except the notes", "run it but skip the notes",
+    "run it, but don't touch the notes", "don't touch notes, just run it", "run it but leave the notes alone", "run it but keep the notes as they are",
+    "don't update the notes, just run it", "run it without filling notes"]) {
+    const p = IN.parse(say);
+    assert.deepStrictEqual(p.steps.map(s => s.op), ["run"], say);
+    assert.deepStrictEqual(p.steps[0].skip, ["notes"], say);
+    assert.match(p.summary, /without fill notes/, say);
+  }
+});
+
+test("clearing everything but one field clears only the others", () => {
+  const p = IN.parse("clear everything except the headline");
+  assert.deepStrictEqual(p.steps[0].fields, ["caption", "hashtags"]);
+});
+
+test("a cancel reply never re-runs the last action", () => {
+  for (const say of ["forget it", "stop", "stop it", "skip it", "cancel that", "never mind that", "don't do that", "leave it", "keep it", "no thanks", "no, don't"]) {
+    for (const ctx of [{}, { lastOp: "highlight", lastFields: ["headline"] }, { pendingGate: true, pendingConfirm: true, lastOp: "copy", lastFields: ["caption"] }]) {
+      const p = IN.parse(say, ctx);
+      assert.deepStrictEqual(p.steps.map(s => s.op), ["skip"], say + " " + JSON.stringify(ctx));
+    }
+  }
+});

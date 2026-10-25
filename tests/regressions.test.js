@@ -133,9 +133,12 @@ test("Spanish and French labels are understood", () => {
   const km = E.analyze("ចំណងជើង: ក្មេងស្រីម្នាក់ជួយសង្គ្រោះឆ្កែពីទឹកជំនន់\nអត្ថបទ: កាលពីម្សិលមិញ ក្មេងស្រីម្នាក់បានជួយសង្គ្រោះឆ្កែមួយក្បាល។\n#កម្ពុជា #ព័ត៌មាន");
   assert.strictEqual(km.headline, "ក្មេងស្រីម្នាក់ជួយសង្គ្រោះឆ្កែពីទឹកជំនន់");
   assert.ok(km.caption.startsWith("កាលពីម្សិលមិញ"), km.caption);
-  // A "Word:" it doesn't know, in another script, makes it ask.
-  const un = E.analyze("სათაური: ძაღლი გადაარჩინეს წყალდიდობას\n\nათი წლის გოგონამ ძაღლი გადაარჩინა. მეზობლები ტაშს უკრავდნენ.");
+  // A pair of "Word:" labels it doesn't know makes it ask.
+  const un = E.analyze("სათაური: ძაღლი გადაარჩინეს წყალდიდობას\nაღწერა: ათი წლის გოგონამ ძაღლი გადაარჩინა. მეზობლები ტაშს უკრავდნენ.");
   assert.ok(un.needsConfirm || !un.headline.startsWith("სათაური"));
+  // One "Word:" opening a Khmer headline is a kicker, not a label.
+  const kick = E.analyze("ព័ត៌មាន: ក្មេងស្រីម្នាក់ជួយសង្គ្រោះឆ្កែពីទឹកជំនន់\n\nកាលពីម្សិលមិញ ក្មេងស្រីម្នាក់បានជួយសង្គ្រោះឆ្កែមួយក្បាល។ អ្នកជិតខាងបានអបអរ។\n\n#កម្ពុជា #ព័ត៌មាន");
+  assert.strictEqual(kick.needsConfirm, false);
 });
 
 test("news kickers and attributions aren't mistaken for labels", () => {
@@ -184,4 +187,45 @@ test("a critique isn't a story, a three-sentence headline is", () => {
   }
   assert.strictEqual(E.isStory(post("HE WAS HOMELESS. HE FOUND $10,000. HE GAVE IT ALL BACK."), "labels"), true);
   assert.strictEqual(E.isStory(post("She lost her job. Then her home. Then a stranger knocked on her door."), "labels"), true);
+});
+
+// Found in the second review round.
+
+test("the assistant's notes and offers after a post are never sent with it", () => {
+  const base = "Headline: Dog walks 20 miles to find the family that gave him away\n\nCaption: Cooper was rehomed in March. Three days later he turned up on their porch.";
+  for (const tail of ["Do you want me to add a source line?", "Would you like me to create an image to go with this post?",
+    "Want me to make it more emotional?", "Sources: CNN, ABC News, NPR", "说明：我把标题写得更短，并加了表情符号。", "설명: 제목을 더 짧게 만들었습니다."]) {
+    const r = E.analyze(base + "\n\n" + tail);
+    assert.strictEqual(r.caption, "Cooper was rehomed in March. Three days later he turned up on their porch.", tail);
+  }
+});
+
+test("everyday words in a story aren't a critique", () => {
+  const post = (h, c) => E.analyze("**Headline:** " + h + "\n\n**Caption:** " + c + "\n\n**Hashtags:** #life #kindness");
+  for (const [h, c] of [["Life is too short to wait for the perfect moment", "Maria, 71, finally took the trip she had saved for since 1975."],
+    ["Try cutting sugar for 30 days, doctors say", "A new study followed 2,000 adults for a month. Most slept better."],
+    ["A strong opening for the city's new library", "Thousands queued on Saturday. The first book borrowed was a 1952 atlas."],
+    ["Teen's science fair project works well enough to win a patent", "Her filter removes 99% of microplastics. It cost $12 to build."]]) {
+    assert.strictEqual(E.isStory(post(h, c), "labels"), true, h);
+  }
+});
+
+test("a lead-in before a one-line headline isn't part of it", () => {
+  for (const say of ["Here's a headline: Dog walks 20 miles home to the family that gave him away", "Here's your headline: Dog walks 20 miles home to the family that gave him away"]) {
+    const r = E.analyze(say);
+    assert.strictEqual(r.headline, "Dog walks 20 miles home to the family that gave him away", say);
+  }
+});
+
+test("a code block's language label is never the headline", () => {
+  const r = E.analyze({ blocks: [{ tag: "p", text: "Here it is:" }, { tag: "pre", text: "plaintext\nHeadline: FAMILY STUNNED AS LOST DOG RETURNS HOME\n\nCaption: When Max slipped out of the yard in 2023, the Parkers searched for months.\n\nHashtags: #dogs #reunited" }] });
+  assert.strictEqual(r.headline, "FAMILY STUNNED AS LOST DOG RETURNS HOME");
+});
+
+test("a headline and caption label pair counts, with a qualifier, emoji or another language", () => {
+  for (const t of ["Main Headline: Dog walks 20 miles home\nShort Caption: Cooper was rehomed in March.", "Titular: Perro camina 30 km a casa\nTexto: Cooper volvió con su familia.",
+    "📰 Headline – Dog walks 20 miles home\n✍️ Caption – Cooper was rehomed in March.", "ចំណងជើង: ក្មេងស្រីជួយសង្គ្រោះឆ្កែ\nអត្ថបទ: កាលពីម្សិលមិញ"]) {
+    assert.ok(E.hasLabels(t), t);
+  }
+  assert.ok(!E.hasLabels("Here is a nice story about a dog that walked home."));
 });

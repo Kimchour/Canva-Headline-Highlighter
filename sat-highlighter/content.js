@@ -134,6 +134,7 @@
             censorMap: state.censorMap,
             method: state.method,
             text: state.text,
+            textFrom: state.textFrom,
             tab: state.tab,
             bundle: state.bundle,
             raw: state.raw,
@@ -1505,12 +1506,14 @@ weapon=w*apon`;
     // the page; the number and "/5000" may be separate text nodes.
     let counter = null;
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-      acceptNode: (t) => (t.nodeValue && t.nodeValue.indexOf("5000") >= 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP)
+      acceptNode: (t) => (t.nodeValue && t.nodeValue.indexOf("000") >= 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP)
     });
+    const COUNTER = /^\d[\d,.\s\u202f]*\/\s*5[,.\s\u202f]?000$/;
     while (!counter && w.nextNode()) {
-      const e = w.currentNode.parentElement;
-      if (e && /^(?:DIV|SPAN|P)$/.test(e.tagName) && e.childElementCount === 0 && notMine(e) && visible(e)
-        && /^\d+\s*\/\s*5000$/.test((e.textContent || "").trim())) counter = e;
+      for (let e = w.currentNode.parentElement, up = 0; e && up < 3 && !counter; e = e.parentElement, up++) {
+        if (/^(?:DIV|SPAN|P)$/.test(e.tagName) && e.childElementCount <= 3 && notMine(e) && visible(e)
+          && COUNTER.test((e.textContent || "").trim())) counter = e;
+      }
     }
     if (!counter) return null;
     let n = counter;
@@ -2243,6 +2246,7 @@ weapon=w*apon`;
           if (!cancelledRun) log("Couldn't be sure which text is the headline, so nothing was clicked.");
           return false;
         }
+        lastTarget = target;
         // While the question was up you may have opened or selected another box.
         const ed = findEditable();
         if ((ed && !sameBox(ed, target.n)) || (!ed && target.asked && somethingSelected())) await deselect();
@@ -2259,6 +2263,13 @@ weapon=w*apon`;
         return false;
       }
     }
+    // Whatever is open must be the headline's box (never Canva's Notes or a
+    // box opened while the question was up).
+    if (lastTarget) {
+      const ed = findEditable();
+      if (ed && !sameBox(ed, lastTarget.n)) { log("The open text box isn't the headline you chose — nothing was written."); lastTarget = null; return false; }
+    }
+    lastTarget = null;
     if (state.alignAfter) captureAnchor();
 
     if (!textMatches()) {
@@ -2494,6 +2505,7 @@ weapon=w*apon`;
 
   function applyBundle(b) {
     if (b.headline) {
+      state.textFrom = "source";
       state.text = b.headline.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
       state.tokens = tokenize(state.text);
       state.phrases = [];
@@ -2577,9 +2589,41 @@ weapon=w*apon`;
   }
 
   function quickBundle() {
-    let d = currentDet();
-    if (d && d.meta.from === "page" && !state.bundle.trim() && state.readPage && !keptReading(d)) d = detectFromPage();
+    const d = currentDet();
     return d ? bundleOf(d.fields) : null;
+  }
+
+  // A reading of the design you kept (edited or confirmed) still follows the
+  // design's headline if you changed it there, unless you typed the headline.
+  let readNode = null;        // the box the last reading of the design came from
+  function refreshPageHeadline(d) {
+    if (!d || d.meta.from !== "page" || (d.edited && d.edited.headline)) return d;
+    // The same box, if it's still there: you confirmed that one.
+    let rk = null, n = readNode && readNode.isConnected ? readNode : null;
+    if (!n) { rk = rankOnPage(d.fields.headline || ""); n = rk.top ? rk.top.cand.n : null; }
+    const now = n ? (n.innerText || "").replace(/\u00a0/g, " ").trim() : "";
+    if (!now || normText(now) === normText(d.fields.headline)) return d;
+    const close = !rk || E.similarity(now, d.fields.headline) >= 0.6;
+    d.fields.headline = now;
+    if (!close) { d.confirmed = rk.confidence >= confNeed(); d.meta.needsConfirm = !d.confirmed; }
+    store.save();
+    paintDetection();
+    return d;
+  }
+
+  // With an empty source, the design is read again when you act on it.
+  function freshPageReading() {
+    if (state.bundle.trim() || !state.readPage) return currentDet();
+    const d = currentDet();
+    if (!d || d.meta.from !== "page") return d;
+    if (keptReading(d)) return refreshPageHeadline(d);
+    // The design still says the same: keep this reading (and the banner on
+    // screen that belongs to it).
+    if (readNode && readNode.isConnected && normText(readNode.innerText) === normText(d.fields.headline)) return d;
+    const nd = detectFromPage();
+    paintDetection(true);
+    paintStages();
+    return nd;
   }
 
   // Smart Detect with an empty source: the headline on the open page (ranked,
@@ -2590,6 +2634,7 @@ weapon=w*apon`;
     const rk = rankOnPage(state.text || "");
     const warnings = [];
     let headline = "", hc = 0, cands = [], reasons = [];
+    readNode = rk.top ? rk.top.cand.n : null;
     if (rk.top) {
       headline = (rk.top.cand.n.innerText || rk.top.text).replace(/ /g, " ").replace(/[ \t]+\n/g, "\n").trim();
       hc = rk.confidence;
@@ -2599,8 +2644,16 @@ weapon=w*apon`;
     let caption = "", tags = [], cc = 0;
     const ned = findNotesEditor();
     if (ned && readEd(ned).trim()) {
-      const nr = E.analyze("Caption:\n" + readEd(ned));
-      caption = nr.caption; tags = nr.hashtags; cc = caption ? 0.9 : 0;
+      // Your Notes word for word; only hashtag lines at the end are taken out.
+      const ls = readEd(ned).replace(/\r/g, "").split("\n");
+      const tagLs = [];
+      while (ls.length && (!ls[ls.length - 1].trim() || /^\s*(?:#[\p{L}\p{M}\p{N}_\u200c\u200d]+[\s,]*)+$/u.test(ls[ls.length - 1]))) {
+        const l = ls.pop();
+        if (l.trim()) tagLs.unshift(l);
+      }
+      caption = ls.join("\n").trim();
+      tags = E.hashtags(tagLs.join(" "));
+      cc = caption ? 0.9 : 0;
     } else warnings.push("Open Canva's Notes to read the caption from the design too");
     const conf = { headline: round2(hc), caption: cc, hashtags: tags.length ? 0.9 : 0, overall: 0 };
     const parts = [[conf.headline, 0.5, headline], [conf.caption, 0.35, caption], [conf.hashtags, 0.15, tags.length]].filter(p => p[2]);
@@ -2648,7 +2701,7 @@ weapon=w*apon`;
   let handleCache = { at: -Infinity, els: [] };
   function handleRects(again) {
     const now = performance.now();
-    if (again || now - handleCache.at > 2000 || handleCache.els.some(e => !e.isConnected)) {
+    if (again || now - handleCache.at > 700 || handleCache.els.some(e => !e.isConnected)) {
       const els = [];
       const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
         acceptNode: (t) => { const v = t.nodeValue; return v && v.length < 48 && v.indexOf("@") >= 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP; }
@@ -2663,7 +2716,7 @@ weapon=w*apon`;
     const rects = handleCache.els.filter(e => !notes || !notes.contains(e))
       .map(e => e.getBoundingClientRect()).filter(r => r.width >= 10 && r.height >= 4);
     // None on screen: a page just rendered may have one the list hasn't seen.
-    if (!rects.length && !again && now - handleCache.at > 300) return handleRects(true);
+    if (!rects.length && !again) return handleRects(true);
     return rects;
   }
 
@@ -2706,7 +2759,20 @@ weapon=w*apon`;
         if (o) { parentOf.set(c, o); break; }
       }
     });
-    const boxes = all.filter(c => { const p = parentOf.get(c); return !p || isContainer(p); });
+    const kidsOf = new Map();
+    all.forEach(c => { const p = parentOf.get(c); if (p) { if (!kidsOf.has(p)) kidsOf.set(p, []); kidsOf.get(p).push(c); } });
+    // Nothing in the box but its lines, in one size, one right under the other.
+    const oneBox = (p) => {
+      const kids = kidsOf.get(p) || [];
+      if (kids.length < 2 || isContainer(p)) return false;
+      const extra = p.txt.replace(/\s+/g, "").length - kids.reduce((a, k) => a + k.txt.replace(/\s+/g, "").length, 0);
+      if (extra > 2) return false;
+      const fs = kids.map(k => k.fs);
+      if (Math.max(...fs) / (Math.min(...fs) || 1) > 1.1) return false;
+      const rs = kids.map(k => k.n.getBoundingClientRect()).sort((a, b) => a.top - b.top);
+      return rs.every((r, i) => !i || r.top - rs[i - 1].bottom <= Math.max(...fs) * 0.8);
+    };
+    const boxes = all.filter(c => { const p = parentOf.get(c); return !p || !oneBox(p); });
     const res = boxes.map(c => {
       const tr = textRect(c.n);
       const below = hs.filter(r => {
@@ -2750,14 +2816,6 @@ weapon=w*apon`;
       rk.top.why.push("a bigger text is partly off screen");
     }
     // The box you pointed out on this page wins while it's still there.
-    // A much bigger text than the best guess: maybe the real headline.
-    if (rk.top && !rk.top.cand.container) {
-      const big = rk.ranked.filter(r => !r.cand.container && r !== rk.top && (+r.cand.fontSize || 0) >= (+rk.top.cand.fontSize || 0) * 1.25 && r.text.length >= 20);
-      if (big.length) {
-        rk.confidence = Math.min(rk.confidence, Math.max(0, confNeed() - 0.05));
-        rk.top.why.push("a bigger text is elsewhere on the page");
-      }
-    }
     if (confirmedEl && confirmedEl.isConnected) {
       const hit = rk.ranked.find(r => !r.cand.container && (r.cand.n === confirmedEl || confirmedEl.contains(r.cand.n) || r.cand.n.contains(confirmedEl)));
       if (hit) {
@@ -2782,6 +2840,7 @@ weapon=w*apon`;
   // guess on the design and ask, unless asking is off. mode "strict" never
   // asks and gives up instead; mode "any" takes the best guess.
   let cancelledRun = false;   // you pressed Cancel on the card during this action
+  let lastTarget = null;      // the headline box this colouring is for
   async function resolveHeadline(log, opts) {
     opts = opts || {};
     if (cancelledRun) return null;
@@ -3168,12 +3227,12 @@ weapon=w*apon`;
           return { ok: false, text: "Looked again every way — nothing better than the first reading, so that's back." };
         }
         // The same headline with the caption lost isn't a better reading.
-        if (before && prevHead && E.similarity(next.fields.headline, prevHead) > 0.9 && !next.fields.caption && before.fields.caption) {
+        if (before && !next.fields.caption && before.fields.caption) {
           state.det = before;
           store.save();
           paintDetection(true);
           paintStages();
-          return { ok: "info", text: "Looked again by " + String(next.meta.strategyName).toLowerCase() + " — same headline and no caption, so the first reading stays." };
+          return { ok: "info", text: "Looked again by " + String(next.meta.strategyName).toLowerCase() + " — it lost the caption, so the first reading stays." };
         }
         if (E.similarity(next.fields.headline, prevHead) > 0.98 && E.similarity(next.fields.caption, before ? before.fields.caption : "") > 0.98) {
           return { ok: "info", text: "Looked again by " + String(next.meta.strategyName).toLowerCase() + " — same result. It's the best match there is." };
@@ -3317,8 +3376,10 @@ weapon=w*apon`;
         return { ok: true, text: "Opened " + ({ studio: "Studio", tools: "Tools", settings: "Settings" })[state.view] + "." };
       }
       case "unsupported":
+        if (!/^(?:highlight|locate)\b/.test(s.what || "")) return { ok: false, text: "I can't " + (s.what || "do that") + "." };
         return { ok: false, text: "Only the headline is coloured on the design. Captions and hashtags go into Notes — say “fill notes”." };
       case "skip":
+        if (!(s.what && s.what.length)) return { ok: "info", text: "Okay — nothing was changed." };
         return { ok: "info", text: "Okay — I won't " + (s.what || []).map(w => (IN.OP_LABEL[w] || w).toLowerCase()).join(" or ") + ". Nothing was changed." };
       case "update": {
         await checkUpdates(false);
@@ -3339,7 +3400,12 @@ weapon=w*apon`;
       }
       case "repeat": {
         const out = [];
-        for (const p of s.plan || []) out.push(await execStep(p));
+        // The same rule as the first time: a choice that didn't happen stops it.
+        for (const p of s.plan || []) {
+          const r = await execStep(p);
+          out.push(r);
+          if (r.ok === false && ["option", "pick", "set", "reanalyze"].includes(p.op)) { out.push({ ok: "info", text: "Stopped there — the rest depended on it." }); break; }
+        }
         const ok = out.every(r => r.ok === true) ? true : out.some(r => r.ok) ? "part" : false;
         return { ok, text: out.map(r => r.text).join(" ") };
       }
@@ -3417,10 +3483,17 @@ weapon=w*apon`;
     if (askGate) {
       const g = askGate;
       askGate = null;
-      if (plan.steps.length === 1 && plan.steps[0].op === "confirm") { await runSteps(g.plan.steps, { title: g.plan.summary }); return; }
-      // "no", "cancel", "never mind": cancelled. "No, just copy the caption":
-      // cancelled, and that instead (checked the usual way).
-      const own = plan.understood && !plan.steps.every(s => ["reanalyze", "skip", "noop"].includes(s.op));
+      if (plan.steps.length === 1 && plan.steps[0].op === "confirm") {
+        // "Yes, but don't fill the notes": the plan without that step.
+        const off = plan.off || [];
+        const steps = g.plan.steps.filter(s => !off.includes(s.op))
+          .map(s => s.op === "run" && off.length ? Object.assign({}, s, { skip: [...new Set((s.skip || []).concat(off))] }) : s);
+        await runSteps(steps, { title: g.plan.summary + (off.length ? " (without " + off.map(w => (IN.OP_LABEL[w] || w).toLowerCase()).join(" or ") + ")" : "") });
+        return;
+      }
+      // "no", "cancel", "never mind", "stop it": cancelled. "No, just copy the
+      // caption": cancelled, and that instead (checked the usual way).
+      const own = plan.understood && !plan.verbless && !plan.steps.every(s => ["reanalyze", "skip", "noop"].includes(s.op));
       if (!own) {
         askOut = { kind: "info", title: "Cancelled", lines: [{ ok: "info", text: "Nothing was changed." }], src: state.bundle };
         paintAskOut();
@@ -3453,10 +3526,12 @@ weapon=w*apon`;
     if (running) return { ok: false, text: "A run is going — wait for it to finish." };
     cancelledRun = false;
     // With an empty source, the headline is whatever is on the design now
-    // (unless you edited or confirmed a reading of it).
+    // (unless you edited or confirmed a reading of it, or typed one in Tools).
     let d = currentDet();
-    const fromDesign = !state.bundle.trim() && (!d || (d.meta.from === "page" && !keptReading(d)));
-    if (fromDesign) d = null;
+    const typed = !state.bundle.trim() && state.textFrom === "typed" && !!state.text.trim();
+    const fromDesign = !state.bundle.trim() && !typed && (!d || (d.meta.from === "page" && !keptReading(d)));
+    if (fromDesign || typed) d = null;
+    else if (d && d.meta.from === "page") d = refreshPageHeadline(d);
     if (d && d.meta.needsConfirm && !d.confirmed && d.fields.headline) {
       flashField("headline");
       return { ok: false, text: "Confirm the headline under Detected first — I'm only " + pct(d.meta.confidence.headline) + " sure of it." };
@@ -3464,9 +3539,13 @@ weapon=w*apon`;
     let headline = d && d.fields.headline ? d.fields.headline : "";
     if (!headline && (fromDesign || !state.text.trim())) {
       // Nothing detected: the headline on the design is the one to colour.
-      const t = await resolveHeadline(null, { want: "" });
+      // Busy while it asks, so Run can't start under the question.
+      running = true;
+      let t = null;
+      try { t = await resolveHeadline(null, { want: "" }); } finally { running = false; }
       if (!t) return { ok: false, text: cancelledRun ? "Cancelled — nothing on the design was changed." : "Couldn't tell which text on the page is the headline, so nothing was coloured." };
       headline = (t.n.innerText || t.txt).trim();
+      state.textFrom = "design";
     }
     if (headline && E.similarity(headline, state.text) < 0.98) applyBundle({ headline });
     if (!state.phrases.length) prepHeadline();
@@ -4515,6 +4594,7 @@ weapon=w*apon`;
       if (!root) return;
       if (state.size && state.size.w) state.size.w = Math.min(state.size.w, Math.max(260, window.innerWidth - 16));
       if (state.size && state.size.h) state.size.h = Math.min(state.size.h, Math.max(220, window.innerHeight - 16));
+      if (toolMenuOpen) { toolMenuOpen = false; render(); }
       place();
     }, 120);
   });
@@ -5277,12 +5357,17 @@ weapon=w*apon`;
       c.style.setProperty("--i", i);
       c.onclick = () => { askDraft = s.text; const n = root.querySelector("#hh-askin"); if (n) n.value = s.text; submitAsk(); };
       c.addEventListener("focus", () => {
+        if (!c.matches(":focus-visible")) return;     // a click shouldn't move it away
         const a = c.offsetLeft, b = a + c.offsetWidth;
         if (a < sugs.scrollLeft) sugs.scrollLeft = a - 4;
         else if (b > sugs.scrollLeft + sugs.clientWidth - 28) sugs.scrollLeft = b - sugs.clientWidth + 32;
       });
       sugs.appendChild(c);
     });
+    // No fade once the row is scrolled to its end (or all of it fits).
+    const edge = () => sugs.classList.toggle("end", sugs.scrollLeft >= sugs.scrollWidth - sugs.clientWidth - 2);
+    sugs.addEventListener("scroll", edge, { passive: true });
+    if (typeof ResizeObserver === "function") new ResizeObserver(edge).observe(sugs);
     box.appendChild(sugs);
 
     const out = el("div", "hh-askout");
@@ -5670,7 +5755,11 @@ weapon=w*apon`;
     const row = el("div", "hh-confirmrow");
     const yes = el("button", "hh-btn primary small", "Yes, use it");
     yes.type = "button";
-    yes.onclick = () => { d.confirmed = true; store.save(); paintDetection(); paintStages(); toast("Headline confirmed"); };
+    yes.onclick = () => {
+      // The reading in use, if it's still this headline.
+      const cur = state.det && normText(state.det.fields.headline) === normText(d.fields.headline) ? state.det : d;
+      cur.confirmed = true; store.save(); paintDetection(); paintStages(); toast("Headline confirmed");
+    };
     row.appendChild(yes);
     if (d.meta.candidates && d.meta.candidates.length > 1) {
       const other = el("button", "hh-btn small", "Show other picks");
@@ -5973,6 +6062,7 @@ weapon=w*apon`;
   async function runQuick(opts) {
     opts = opts || {};
     if (running) return;
+    freshPageReading();
     const b = quickBundle();
     if (!b) {
       toast(state.bundle.trim() ? "Nothing to run — no headline or caption found in the source" : "Paste your post first — or press Detect to read the open design");
@@ -5996,7 +6086,7 @@ weapon=w*apon`;
     const STAGE_OF = { notes: "notes", highlight: "colour", lineup: "align", fill: "fill", photo: "photo", censor: "censor" };
     (opts.skip || []).forEach(o => {
       const id = STAGE_OF[o];
-      if (id && run.status[id] !== "skip") { run.status[id] = "skip"; run.detail[id] = "Left out, as you asked"; }
+      if (id && run.status[id] !== "skip") { run.status[id] = "skip"; run.detail[id] = id === "colour" ? "Left out, as you asked — the headline on the design wasn't changed" : "Left out, as you asked"; }
     });
     if (!b.headline) ["colour", "align"].forEach(id => {
       if (run.status[id] !== "skip") { run.status[id] = "skip"; run.detail[id] = "No headline detected"; }
@@ -6104,7 +6194,8 @@ weapon=w*apon`;
       run.result = {
         kind,
         text: cancelledRun ? "Cancelled" + (done ? " after " + done + " step" + (done === 1 ? "" : "s") : " — nothing on the design was changed")
-          : !total ? "Nothing to run" : failed ? done + " of " + total + " steps done" : "All " + total + " steps done"
+          : (!total ? "Nothing to run" : failed ? done + " of " + total + " steps done" : "All " + total + " steps done")
+            + ((opts.skip || []).includes("highlight") && b.headline ? " — the headline on the design wasn't changed" : "")
       };
       finished = !failed;
       running = false;
@@ -6154,6 +6245,7 @@ weapon=w*apon`;
     ta.value = state.text;
     ta.oninput = () => {
       state.text = ta.value;
+      state.textFrom = "typed";
       state.tokens = tokenize(state.text);
       state.phrases = [];
       state.cursor = -1;
@@ -6172,6 +6264,7 @@ weapon=w*apon`;
         return;
       }
       state.text = ta.value;
+      state.textFrom = "typed";
       prepHeadline();
       render();
     }, 0);
@@ -6667,8 +6760,11 @@ weapon=w*apon`;
   function readable(color) {
     const hex = firstStop(color);
     const n = parseInt(hex.slice(1), 16);
-    const l = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
-    return l > 0.6 ? "#12131A" : "#FFFFFF";
+    // Whichever of dark or white text stands out more (WCAG contrast), so
+    // coral and other mid-tones get dark text rather than faint white.
+    const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+    return (L + 0.05) / 0.0566 >= 1.05 / (L + 0.05) ? "#12131A" : "#FFFFFF";
   }
 
   // Short chimes built in the browser — no audio files, so nothing to load and
@@ -6804,6 +6900,7 @@ weapon=w*apon`;
 
   function startMove(e) {
     if (e.button !== 0 || e.target.closest("button,input,textarea,select,a")) return;
+    if (toolMenuOpen) { toolMenuOpen = false; render(); }
     drag = { mode: "move", sx: e.clientX, sy: e.clientY, ox: root.offsetLeft, oy: root.offsetTop };
     root.classList.add("hh-dragging");
     e.preventDefault();
@@ -6811,6 +6908,7 @@ weapon=w*apon`;
 
   function startResize(mode, e) {
     if (e.button !== 0) return;
+    if (toolMenuOpen) { toolMenuOpen = false; render(); }
     drag = {
       mode, sx: e.clientX, sy: e.clientY,
       ow: root.offsetWidth, oh: wrap.offsetHeight, ox: root.offsetLeft, oy: root.offsetTop
@@ -7624,7 +7722,7 @@ weapon=w*apon`;
     state.bundle = text;
     state.optionIndex = 0;
     askGate = null;
-    forgetAsk();
+    if (!askBusy) { askOut = null; paintAskOut(); paintAskPreview(); }
     state.view = "studio";
     state.collapsed = false;
     sheet = null;

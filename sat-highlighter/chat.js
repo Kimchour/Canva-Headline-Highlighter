@@ -34,12 +34,11 @@
   //   "strict": labelled, or unlabelled but clearly a post with hashtags
   //   "loose":  anything with a headline and a caption (only when you ask)
   // A cheap first look, so a long chat isn't analysed reply by reply: a story
-  // has Headline/Caption-style labels or at least two hashtags.
-  // A label is a word at the start of a line, before a colon or on its own.
-  const LABEL_WORDS = (t) => /(?:^|\n)[\s*_#>\-\d.)]*(?:headline|title|hook)s?\b[^\n:]{0,24}(?::|\s*$|\s*\n)/im.test(t)
-    && /(?:^|\n)[\s*_#>\-\d.)]*(?:caption|body|story)\b[^\n:]{0,24}(?::|\s*$|\s*\n)/im.test(t);
-  const TWO_TAGS = /(?:^|[^\p{L}\p{N}_&\/#])#[\p{L}\p{N}_][\s\S]*?(?:^|[^\p{L}\p{N}_&\/#])#[\p{L}\p{N}_]/u;
-  const mayHoldStory = (t) => LABEL_WORDS(t) || TWO_TAGS.test(t);
+  // has a headline label and a caption label (read line by line, the way the
+  // engine reads them, in every word and language it knows) or two hashtags.
+  const LABEL_WORDS = (t) => E.hasLabels(t);
+  const TAG_START = /(?:^|[^\p{L}\p{N}_&\/#])#[\p{L}\p{N}_]/gu;
+  const mayHoldStory = (t) => (t.match(TAG_START) || []).length >= 2 || LABEL_WORDS(t);
 
   function extract(node, mode) {
     const text = node.innerText || node.textContent || "";
@@ -56,9 +55,11 @@
     if (!E.isStory(r, mode)) return null;
     const labelled = E.isStory(r, "labels");
     if (techy && !labelled) return null;
-    // Even when you ask, a reply needs a post's shape: Headline and Caption
-    // labels, or hashtags. A recipe or an essay with headings has neither.
-    if (mode === "loose" && !labelled && !r.hashtags.length) return null;
+    // Even when you ask, a reply needs a post's shape: a labelled headline and
+    // caption (in any language), or hashtags. A recipe or an essay with
+    // headings has neither.
+    const pair = r.strategy === "labels" && !!(r.labels && r.labels.headline && r.labels.caption);
+    if (mode === "loose" && !labelled && !pair && !r.hashtags.length) return null;
     return {
       story: { headline: r.headline, caption: r.caption, tags: r.hashtags },
       options: r.options ? r.options.length : 1,
@@ -141,6 +142,8 @@
   function scan() {
     clearTimeout(timer);
     const nodes = replies();
+    // "Still writing…": wait for the newest reply to finish before anything.
+    if (cardMode === "waiting" && nodes.length && streaming(nodes[nodes.length - 1])) { timer = setTimeout(scan, 1200); return; }
     let found = null, node = null;
     // The newest replies only: a story far back in a long chat isn't offered,
     // and opening that chat doesn't read every old reply.
@@ -151,10 +154,11 @@
     // You asked while it was still writing: look the way the toolbar icon does.
     if (!found && cardMode === "waiting") {
       for (let i = nodes.length - 1; i >= Math.max(0, nodes.length - 4) && !found; i--) {
-        if (streaming(nodes[i])) { timer = setTimeout(scan, 1200); return; }
         const f = cachedExtract(nodes[i], "loose");
         if (f) { found = f; node = nodes[i]; }
       }
+      // Finished, and there's no story in it: say so rather than wait forever.
+      if (!found) { showEmpty(); return; }
     }
     if (!found) return;
     if (streaming(node)) { live.add(node); timer = setTimeout(scan, 1200); return; }

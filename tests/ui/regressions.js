@@ -351,6 +351,64 @@ async function runDone(page) {
     check("a coloured CTA line on a template isn't a finished post", v.why !== "finished", JSON.stringify(v));
   });
 
+  await scenario("Ask box: saying no", seed(), null, async (page) => {
+    await paste(page, LABELLED);
+    await page.click("#notesbtn");
+    await page.evaluate(() => { document.getElementById("noteed").innerText = "MY NOTES: photo credit Jane Doe, do not delete"; });
+    const notes = () => page.evaluate(() => document.getElementById("noteed").innerText);
+    const pastes = () => page.evaluate(() => window.__pastes || 0);
+
+    let out = await ask(page, "please don't go and fill the notes");
+    check("“please don't go and fill the notes” leaves Notes alone", /^MY NOTES/.test(await notes()) && !(await pastes()), out);
+    out = await ask(page, "don't run the highlight");
+    check("“don't run the highlight” changes nothing", !(await pastes()) && /Nothing was changed/.test(out), out);
+    await ask(page, "highlight the headline");
+    const p0 = await pastes();
+    out = await ask(page, "forget it");
+    check("“forget it” after a highlight doesn't colour it again", (await pastes()) === p0 && /nothing was changed/i.test(out), out);
+    await ask(page, "start over");
+    out = await ask(page, "no, don't do that");
+    check("“no, don't do that” to Go ahead? cancels and does nothing else", /Cancelled/.test(out) && (await pastes()) === p0 && (await page.inputValue(".hh-paste")).length > 100, out);
+    out = await ask(page, "clear the notes");
+    check("“clear the notes” says it can't, and leaves Notes alone", /can't empty Canva's Notes/.test(out) && /^MY NOTES/.test(await notes()), out);
+    out = await ask(page, "clear everything except the headline");
+    check("“clear everything except the headline” keeps the headline", (await head(page)).startsWith("FAMILY") && (await page.locator(".hh-tag").count()) === 0 && (await page.inputValue(".hh-paste")).length > 100, out);
+  });
+
+  await scenario("Ask box: a run that leaves Notes alone", seed(), null, async (page) => {
+    await paste(page, LABELLED);
+    await page.click("#notesbtn");
+    await page.evaluate(() => { document.getElementById("noteed").innerText = "MY NOTES: photo credit Jane Doe, do not delete"; });
+    let out = await ask(page, "run it, but don't touch the notes");
+    if (await page.locator(".hh-askgate").count()) { await page.click(".hh-askgate .hh-btn.primary"); await runDone(page); out = await text(page, "#hh-askout"); }
+    await runDone(page);
+    check("the headline is written and Notes kept", /FAMILY STUNNED/.test(await text(page, "#headline")) && /^MY NOTES/.test(await page.evaluate(() => document.getElementById("noteed").innerText)), out);
+  });
+
+  await scenario("A run without the highlight", seed(), null, async (page) => {
+    await paste(page, LABELLED);
+    await ask(page, "run it but don't highlight");
+    await runDone(page);
+    const res = await text(page, "#hh-result") || "";
+    check("it says the headline on the design wasn't changed", /wasn't changed/.test(res) && /OLD HEADLINE/.test(await text(page, "#headline")), res);
+  });
+
+  await scenario("Suggestions and a coral accent", seed({ active: "#FF6B4A", size: { w: 300, h: null } }), null, async (page) => {
+    const edge = await page.evaluate(() => {
+      const s = document.getElementById("hh-sugs");
+      s.scrollLeft = s.scrollWidth;
+      return new Promise(r => setTimeout(() => r({ end: s.classList.contains("end"), mask: getComputedStyle(s).maskImage || getComputedStyle(s).webkitMaskImage }), 100));
+    });
+    check("the last suggestion isn't faded once the row is at its end", edge.end && /none/.test(edge.mask), JSON.stringify(edge));
+    const ratio = await page.evaluate(() => {
+      const lum = (c) => { const m = c.match(/\d+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; };
+      const b = document.getElementById("hh-go"), cs = getComputedStyle(b);
+      const a = lum(cs.color), bg = lum("rgb(255, 107, 74)");
+      return (Math.max(a, bg) + 0.05) / (Math.min(a, bg) + 0.05);
+    });
+    check("Run's label stands out on coral (3:1 or better)", ratio >= 3, ratio.toFixed(2));
+  });
+
   // ChatGPT puts a post in a code block when asked: a language label and a
   // Copy button sit above the code.
   console.log("A post in a ChatGPT code block");

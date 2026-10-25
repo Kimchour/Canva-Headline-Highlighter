@@ -121,8 +121,11 @@ asked; "no" or "not that one" looks again.
 
 It listens for "don't" and "not": "don't run it yet, just copy the caption" only copies,
 "copy everything except the hashtags" leaves them out, and "highlight it but don't line
-it up" skips the line-up. Words like "again" or "no" only mean "look again" when they're
-all you wrote, so "copy the caption again" just copies.
+it up" skips the line-up. "Run it but leave the notes alone" (or "without the notes",
+"except the notes") runs without filling Notes. "Forget it", "stop", "leave it" or "never
+mind" do nothing at all, and answer **Go ahead?** with a no. Words like "again" or "no"
+only mean "look again" when they're all you wrote, so "copy the caption again" just
+copies.
 
 If part of what you wrote didn't make sense to it and the plan would change the design,
 Notes or your fields, it shows the plan and asks **Go ahead?** first.
