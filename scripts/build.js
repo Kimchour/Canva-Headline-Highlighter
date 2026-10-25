@@ -19,7 +19,10 @@ const manifest = JSON.parse(fs.readFileSync(path.join(SRC, "manifest.json"), "ut
 const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "version.json"), "utf8"));
 const fail = (m) => { console.error("Build stopped: " + m); process.exit(1); };
 if (vj.version !== manifest.version) fail("version.json says " + vj.version + " but manifest.json says " + manifest.version + ".");
-if (!String(vj.download || "").endsWith("?v=" + vj.version)) fail("version.json's download link should end with ?v=" + vj.version + ".");
+// The zip at a commit (never changes), or main's zip with ?v=<version>.
+const DL = /^https:\/\/raw\.githubusercontent\.com\/[\w.-]+\/[\w.-]+\/(?:[0-9a-f]{40}\/canva-headline-highlighter\.zip|main\/canva-headline-highlighter\.zip\?v=(.+))$/;
+const dl = String(vj.download || "").match(DL);
+if (!dl || (dl[1] !== undefined && dl[1] !== vj.version)) fail("version.json's download link should be a commit's canva-headline-highlighter.zip, or main's with ?v=" + vj.version + ".");
 for (const f of manifest.content_scripts.flatMap(c => (c.js || []).concat(c.css || []))) {
   if (!FILES.includes(f)) fail(f + " is in the manifest but not in the build list.");
 }

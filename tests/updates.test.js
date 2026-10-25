@@ -48,5 +48,7 @@ test("the repo's version.json matches the extension's manifest", () => {
   const mf = JSON.parse(fs.readFileSync(path.join(root, "sat-highlighter", "manifest.json"), "utf8"));
   assert.strictEqual(vj.version, mf.version);
   assert.ok(U.normalize(vj), "version.json reads cleanly");
-  assert.ok(vj.download.includes("?v=" + vj.version), "download link carries the version");
+  // A commit's zip (never changes), or main's with ?v=<version>.
+  assert.ok(/\/[0-9a-f]{40}\/canva-headline-highlighter\.zip$/.test(vj.download) || vj.download.endsWith("?v=" + vj.version), vj.download);
+  assert.strictEqual(U.safeDownload(vj.download, vj.version), vj.download, "the update check accepts the link as it is");
 });

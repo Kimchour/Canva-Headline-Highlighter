@@ -201,7 +201,9 @@ function main() {
   L("| Measure | Result |");
   L("|---|---|");
   L("| Non-story replies offered as a story (false positives) | " + fp + " / " + nonN + " |");
-  L("| Real stories offered | " + offered + " / " + offerN + " |");
+  L("| Real stories offered without asking | " + offered + " / " + offerN + " |");
+  L("");
+  L("Without labels, a card comes up unasked only for a heading, or a first or bold line in CAPS or Title Case: a sentence-case first line plus hashtags is just as often a tweet or LinkedIn draft. Those stories are still found when you click the toolbar icon.");
   L("");
   L("## Instructions and the design");
   L("");
@@ -213,6 +215,11 @@ function main() {
   if (rows.length) {
     L("");
     L("## Misses");
+    L("");
+    L("A short caption pasted on its own reads like a two-sentence headline (\u201cHe waited 40 years for this letter. Then");
+    L("it finally arrived.\u201d) or a headline with one line of story under it, so its first line is taken as the headline");
+    L("and marked to check first: nothing runs on it until you confirm. 3.4 took any short single block as the headline");
+    L("without asking.");
     L("");
     rows.slice(0, 40).forEach(r => L("- " + r));
   }

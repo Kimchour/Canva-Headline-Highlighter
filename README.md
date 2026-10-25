@@ -7,6 +7,29 @@ and takes stories from Claude or ChatGPT straight into Canva.
 **To install or update, use `canva-headline-highlighter.zip`** — the user guide is in
 [`sat-highlighter/README.md`](sat-highlighter/README.md).
 
+## What's new in 4.0
+
+- **A new panel**: Studio, Tools and Settings in a glass panel, with an Updates sheet that
+  shows both versions and the release notes.
+- **Smart Detect** finds the headline, caption and hashtags in any post, labelled or not
+  (Headline, Title, Caption, Description, and the same labels in Spanish, Portuguese,
+  French, Italian, German and Indonesian), and shows how sure it is about each one.
+- **Edit before you run**: the detected fields can be changed, and other headline
+  candidates are one click away. Run uses exactly what you see.
+- **It asks when it isn't sure** which line, or which text box on the design, is the
+  headline — and Cancel means nothing on the design changes.
+- **Ask box** (Alt + K): say what you want — "copy the caption and hashtags", "highlight
+  the title", "don't run it yet, just copy the caption". It checks with you before anything
+  it only half understood changes the design or Notes.
+- **Highlight Headline** rings the headline on the design and colours it, checked letter by
+  letter. **Copy All** copies all three neatly separated. With an empty source, **Detect**
+  reads the open design's headline and the caption in Notes.
+- **Claude and ChatGPT** replies are read by their structure, so a story with a heading and
+  hashtags is found without labels. Only a story with Headline and Caption labels is ever
+  sent on its own.
+- Hashtags in Khmer, Hindi and Thai keep their vowel signs, and digit-only or run-together
+  hashtags (#2024, #aviation#pilot) are kept.
+
 ## What's in the repo
 
 | Path | What it is |
@@ -35,7 +58,8 @@ New capabilities go in as a strategy in `engine.js` (see `STRATEGIES`), a verb i
 
 ```
 npm test            # unit tests: engine corpus, intents, update check, headline ranking, phrases
-npm run test:ui     # the real panel and chat card in Chromium, on mock Canva and ChatGPT pages
+npm run test:ui     # the real panel and chat card in Chromium, on mock Canva and ChatGPT pages,
+                    # plus the regression checks from the 4.0 pre-release review
 npm run bench       # accuracy, false positives, confidence, speed -> tests/BENCHMARK.md
 npm run build       # canva-headline-highlighter.zip from sat-highlighter/
 ```
@@ -52,10 +76,16 @@ publishing it.
 ## Publishing a version
 
 1. Bump `version` in `sat-highlighter/manifest.json` and `package.json`.
-2. In `version.json`, set `version`, `date`, `download` (ending `?v=<version>`), and
-   `added` / `fixed`; move the previous entry into `history`.
+2. In `version.json`, set `version`, `date` and `added` / `fixed` (3.x shows at most six
+   new and four fixed items, so keep to that); move the previous entry into `history`.
 3. `npm test && npm run build` — the build stops if `version.json` and the manifest
    disagree.
-4. Commit `canva-headline-highlighter.zip` and `version.json` to `main`. Every installed
-   Highlighter sees the new version within 12 hours, or straight away with Check for
-   updates.
+4. Commit everything, including the new zip. Then set `download` in `version.json` to that
+   commit's zip, `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/canva-headline-highlighter.zip`,
+   and commit `version.json` on its own. Push both commits to `main` together.
+
+   A link to a commit never changes. GitHub caches `main`'s files for up to five minutes and
+   ignores `?v=`, so a link to `main` could hand out the old zip next to the new
+   `version.json` for those minutes.
+5. Every installed Highlighter sees the new version within 12 hours, or a few minutes after
+   publishing with Check for updates.

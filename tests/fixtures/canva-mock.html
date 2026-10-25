@@ -54,9 +54,18 @@
   const hl = document.getElementById("headline");
   const sec = document.getElementById("second");
   const tb = document.getElementById("toolbar");
+  // As in Canva: working on one box ends editing the other, and Escape or a
+  // click on the grey workspace ends editing and clears the selection.
+  const closeAll = (except) => [hl, sec].forEach(b => { if (b !== except) b.removeAttribute("contenteditable"); });
+  const deselectAll = () => { closeAll(null); tb.classList.remove("show"); window.__selected = null; };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") deselectAll(); });
+  document.addEventListener("mousedown", (e) => {
+    if (!e.target.closest(".stage, #toolbar, .hh-root, .hh-layer, #notes, #bottom, header, nav")) deselectAll();
+  });
   [hl, sec].forEach(box => {
-    box.addEventListener("click", () => { tb.classList.add("show"); window.__selected = box.id; });
+    box.addEventListener("click", () => { closeAll(box); tb.classList.add("show"); window.__selected = box.id; });
     box.addEventListener("dblclick", () => {
+      closeAll(box);
       box.setAttribute("contenteditable", "true");
       box.focus();
     });

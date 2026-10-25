@@ -29,7 +29,8 @@ Source and new versions: https://github.com/Kimchour/Canva-Headline-Highlighter
   "highlight the title", "fix the selection". It works out the steps, does them, checks
   them and says exactly what happened.
 - **Highlight Headline.** Finds the headline on the design with a confidence score, rings
-  it, and colours it. When it can't tell which text is the headline, it asks.
+  it, and colours it. When it can't tell which text is the headline, it asks - and if
+  you press Cancel, nothing on the design changes.
 - **Check for Updates** has its own sheet with both versions, the release notes and the
   update steps.
 
@@ -101,18 +102,30 @@ Say it however you like. Some of what it understands:
 | what's the headline on the design? | Reads it from the page |
 | fix the selection / that's not the headline | Reanalyzes |
 | use option 2 / the second one | Switches option, or headline candidate |
-| set the headline to "..." | Uses your exact words |
+| set the headline to "..." | Uses your exact words (put short ones in quotes) |
+| change the headline to the second one | Picks that candidate, not those words |
 | make it heavier / lighter | More or fewer highlighted phrases |
 | run it / send it to Canva | The full run |
 | fill notes / line up the headline / enhance the photo | That one step |
 | check for updates | Asks GitHub |
-| start over | Clears everything |
+| clear the hashtags / remove the caption | Empties just that field under Detected |
+| undo the line up / undo the photo fill | Undoes that one step |
+| go to settings / open the tools | Opens that tab |
+| start over | Clears everything, after you say yes |
 
 Several steps in one go work too: "extract everything then highlight the headline and
 copy the caption". Follow-ups use what came before: after "grab the headline", "copy it"
 copies the headline; "now the caption" does the same for the caption; "and the hashtags"
 adds them. "Try again" after something failed runs it again; "yes" answers a question it
-asked.
+asked; "no" or "not that one" looks again.
+
+It listens for "don't" and "not": "don't run it yet, just copy the caption" only copies,
+"copy everything except the hashtags" leaves them out, and "highlight it but don't line
+it up" skips the line-up. Words like "again" or "no" only mean "look again" when they're
+all you wrote, so "copy the caption again" just copies.
+
+If part of what you wrote didn't make sense to it and the plan would change the design,
+Notes or your fields, it shows the plan and asks **Go ahead?** first.
 
 Each step reports what actually happened - "Copied the caption and hashtags (840
 characters)", "No hashtags found in the source", "Coloured 3 phrases - checked letter by
@@ -209,11 +222,14 @@ in its root that the update check reads:
 
 - `canva-headline-highlighter.zip` - the extension
 - `version.json` - the newest version and what changed. Its `version` must match the
-  `version` in `manifest.json`, and `download` points at the zip with `?v=` and the version.
+  `version` in `manifest.json`, and `download` points at the zip.
 
 `node scripts/build.js` makes the zip from `sat-highlighter/` and stops if the two versions
-disagree. Upload both files and every Highlighter sees the new version within 12 hours, or
-straight away with Check for updates.
+disagree. Commit the zip first, then point `download` at that commit
+(`https://raw.githubusercontent.com/<owner>/<repo>/<commit>/canva-headline-highlighter.zip`)
+and commit `version.json`. A link to a commit never changes, so the version file and the
+zip can't be out of step while GitHub's cache catches up. Every Highlighter sees the new
+version within 12 hours, or a few minutes after publishing with Check for updates.
 
 ## Automation
 
@@ -253,9 +269,11 @@ off, along with Open the text box for me.
 
 When a reply on claude.ai or chatgpt.com holds a finished story, a card appears in the
 corner asking whether to send it to Canva. It reads the reply's structure: a story with
-Headline and Caption labels is found, and so is one with a heading, the story and its
-hashtags but no labels - the card then says "Found without labels - check the fields in
-Canva before you run". The card shows the headline, the three counts and how sure it is.
+Headline and Caption labels is found, and so is one with a heading (or a first line in
+CAPS or Title Case), the story and its hashtags but no labels - the card then says "Found
+without labels - check the fields in Canva before you run". Code, tables, and drafts like
+a tweet or a LinkedIn post (a sentence-case first line plus hashtags) don't bring up a
+card on their own. The card shows the headline, the three counts and how sure it is.
 It only asks once the reply has finished generating, and only once per story.
 
 **Send to Canva** puts it in the Highlighter's source box on your open Canva design and
@@ -273,7 +291,8 @@ the newest one once it finishes - it says "Newer story" so you know it changed.
 If no Canva design is open, the story is saved and appears in the Highlighter when you
 open one. Clicked "Not now" by mistake, or want it to look harder? Click the extension's
 toolbar icon on the chat page: it brings the card back, and if there wasn't one, looks at
-the latest replies again, labels or not.
+the latest replies again, labels or not. A reply that's still being written isn't
+offered until it's finished.
 
 ## Run on design
 

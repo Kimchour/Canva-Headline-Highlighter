@@ -33,20 +33,36 @@
   // never the intro, sources, notes or follow-up questions.
   //   "strict": labelled, or unlabelled but clearly a post with hashtags
   //   "loose":  anything with a headline and a caption (only when you ask)
+  // A cheap first look, so a long chat isn't analysed reply by reply: a story
+  // has Headline/Caption-style labels or at least two hashtags.
+  const LABEL_WORDS = (t) => /\b(?:headline|title|hook)s?\b/i.test(t) && /\b(?:caption|body|story)\b/i.test(t);
+  const TWO_TAGS = /(?:^|[^\p{L}\p{N}_&\/#])#[\p{L}\p{N}_][\s\S]*?(?:^|[^\p{L}\p{N}_&\/#])#[\p{L}\p{N}_]/u;
+  const mayHoldStory = (t) => LABEL_WORDS(t) || TWO_TAGS.test(t);
+
   function extract(node, mode) {
+    const text = node.innerText || node.textContent || "";
+    if (mode !== "loose" && !mayHoldStory(text)) return null;
+    // Code, tables and technical answers aren't posts, unless they carry the
+    // labels (a post can come in a code block for easy copying).
+    const techy = !!(node.querySelector && (node.querySelector("pre, table") || node.querySelectorAll("code").length >= 3));
+    if (techy && !LABEL_WORDS(text)) return null;
     let blocks = [];
     try { blocks = E.collectBlocks(node); } catch (e) { blocks = []; }
-    const text = node.innerText || node.textContent || "";
-    let r = blocks.length ? E.analyze({ blocks }) : E.analyze(text);
-    if (!E.isStory(r, mode)) {
-      const t = E.analyze(text);
-      if (E.isStory(t, mode)) r = t; else return null;
-    }
+    // The reply's own structure, or its text when it has none. Reading the
+    // text as well, as a second try, turned table rows into headlines.
+    const r = blocks.length ? E.analyze({ blocks }) : E.analyze(text);
+    if (!E.isStory(r, mode)) return null;
+    const labelled = E.isStory(r, "labels");
+    if (techy && !labelled) return null;
+    // Even when you ask, a reply needs a post's shape: labels, a heading or
+    // bold headline over the story, or hashtags.
+    if (mode === "loose" && !(r.strategy === "labels" || r.strategy === "structure" || r.hashtags.length)) return null;
     return {
       story: { headline: r.headline, caption: r.caption, tags: r.hashtags },
       options: r.options ? r.options.length : 1,
       block: E.formatBlock(r, { allOptions: true }),
-      labelled: r.strategy === "labels",
+      // Sent on its own only with Headline and Caption labels in 3.4's words.
+      labelled,
       confidence: r.confidence.overall,
       method: r.strategyName
     };
@@ -146,9 +162,10 @@
     // Only a labelled story goes in by itself; an unlabelled one always asks.
     if (autoMode && found.labelled && isLive(node) && cardMode !== "busy") { autoSend(found, key); return; }
     if (!cardOpen) { showCard(found, key); return; }
-    // An offer you haven't answered is replaced by a newer story. A card that's
-    // sending or showing a result is left alone; closing it rescans.
-    if (cardMode === "offer" && shownKey !== key) showCard(found, key, true);
+    // An offer you haven't answered is replaced by a newer story, or by the
+    // finished version of the one shown. A card that's sending or showing a
+    // result is left alone; closing it rescans.
+    if (cardMode === "offer" && (shownKey !== key || shownBlock !== found.block)) showCard(found, key, shownKey !== key);
   }
 
   // Note replies that are being written right now. Runs on every change,
@@ -184,9 +201,11 @@
       if (!m || m.type !== "hh-toggle") return;
       if (cardOpen) { closeCard(); return; }
       if (latest) { showCard(latest.found, latest.key); return; }
-      // You asked: look harder at the newest replies, labels or not.
+      // You asked: look harder at the newest replies, labels or not. A reply
+      // still being written isn't offered: its caption isn't finished.
       const nodes = replies();
       for (let i = nodes.length - 1; i >= Math.max(0, nodes.length - 4); i--) {
+        if (streaming(nodes[i])) { showEmpty("Still writing \u2014 I'll offer the story when the reply is finished."); return; }
         const f = cachedExtract(nodes[i], "loose");
         if (f) { showCard(f, keyOf(f.story)); return; }
       }
@@ -198,6 +217,7 @@
 
   let host = null, shadow = null, cardOpen = false;
   let shownKey = null;     // story on the open card
+  let shownBlock = null;   // and exactly what it would send
   let cardMode = null;     // "offer" | "busy" | "result"
 
   const CSS = `
@@ -298,6 +318,7 @@
     const c = shadow && shadow.querySelector(".card");
     cardOpen = false;
     shownKey = null;
+    shownBlock = null;
     cardMode = null;
     // A newer story may have finished while this card was up.
     setTimeout(scan, 400);
@@ -309,6 +330,7 @@
   function showCard(found, key, swapped) {
     const s = found.story;
     shownKey = key;
+    shownBlock = found.block;
     cardMode = "offer";
     const c = Math.round((found.confidence || 0) * 100);
     const lvl = c >= 80 ? "" : c >= 60 ? "mid" : "low";
@@ -384,9 +406,9 @@
     shadow.querySelector(".no").onclick = () => closeCard();
   }
 
-  function showEmpty() {
+  function showEmpty(msg) {
     cardMode = "result";
-    frame('<div class="note">No finished story in this chat yet \u2014 a reply needs a headline and a caption.</div>'
+    frame('<div class="note">' + esc(msg || "No finished story in this chat yet \u2014 a reply needs a headline and a caption.") + '</div>'
       + '<div class="row"><button class="no">OK</button></div>');
     shadow.querySelector(".no").onclick = () => closeCard();
   }

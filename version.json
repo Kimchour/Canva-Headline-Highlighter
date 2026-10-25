@@ -4,22 +4,16 @@
   "download": "https://raw.githubusercontent.com/Kimchour/Canva-Headline-Highlighter/main/canva-headline-highlighter.zip?v=4.0.0",
   "required": false,
   "added": [
-    "A new look: a glass panel with Studio, Tools and Settings, smooth motion, and a switch-off for motion in your system settings",
-    "Smart Detect finds the headline, caption and hashtags in any post, with or without Headline:, Title:, Caption: or Description: labels",
-    "Every field shows how sure it is, how it was found, and other headline candidates you can pick with one click",
-    "Edit the headline, caption and hashtags before anything goes to Canva; Run uses exactly what you see",
-    "If it isn't sure which line is the headline, it asks you instead of guessing",
-    "Ask box: say what you want in your own words, like “copy the caption and hashtags”, “highlight the title” or “fix the selection” (Alt + K)",
-    "Highlight Headline finds the headline on the design, shows you a ring around it, colours it and checks every letter",
-    "On the design it never just takes the biggest text: it weighs the words, the @handle under it, colours and the layout you confirmed before, and asks when it can't tell",
-    "Copy All copies the headline, caption and hashtags neatly separated, without repeating hashtags already in the caption",
-    "With an empty source, Detect reads the open design: the headline on the page and the caption in Notes",
-    "Updates sheet: installed and latest version, release notes, Checking / Up to date / Update available, and a NEW badge on the toolbar icon",
-    "Claude and ChatGPT replies are read by their structure, so a story with a heading and hashtags is found even without labels"
+    "A new panel: Studio, Tools and Settings, and an Updates sheet with both versions and the release notes",
+    "Smart Detect finds the headline, caption and hashtags in any post, labelled or not, and shows how sure it is about each",
+    "Edit the detected fields before anything goes to Canva; other headline candidates are one click away",
+    "When it isn't sure which line or text box is the headline, it asks you instead of guessing",
+    "Ask box (Alt + K): say what you want, like “copy the caption and hashtags” or “highlight the title”",
+    "Highlight Headline, Copy All, and Detect on an empty source reading the open design and Notes"
   ],
   "fixed": [
-    "A lone reaction line like “This is so wild.” is no longer taken for a headline",
-    "Hashtags come out in the order they appear, wherever they are in the post"
+    "Hashtags in Khmer, Hindi and Thai keep their vowel signs; #2024 and run-together hashtags are kept",
+    "A lone reaction line like “This is so wild.” is no longer taken for a headline"
   ],
   "history": [
     {
