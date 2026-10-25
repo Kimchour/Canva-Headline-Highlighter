@@ -127,9 +127,24 @@ test("Spanish and French labels are understood", () => {
   assert.ok(es.caption.startsWith("Una niña"));
   const fr = E.analyze("Titre : UNE FILLETTE SAUVE UN CHIEN\nLégende : Elle avait dix ans.");
   assert.strictEqual(fr.headline, "UNE FILLETTE SAUVE UN CHIEN");
-  // An unknown "Word:" prefix on an unlabelled headline makes it ask.
-  const un = E.analyze("Rubrik: HUND RÄDDAD UR ÖVERSVÄMNING\n\nEn tioårig flicka räddade en hund. Grannarna jublade.");
-  assert.ok(un.needsConfirm || !un.headline.startsWith("Rubrik"));
+  const sv = E.analyze("Rubrik: HUND RÄDDAD UR ÖVERSVÄMNING\n\nEn tioårig flicka räddade en hund. Grannarna jublade.");
+  assert.strictEqual(sv.headline, "HUND RÄDDAD UR ÖVERSVÄMNING");
+  // Khmer labels, vowel signs and all.
+  const km = E.analyze("ចំណងជើង: ក្មេងស្រីម្នាក់ជួយសង្គ្រោះឆ្កែពីទឹកជំនន់\nអត្ថបទ: កាលពីម្សិលមិញ ក្មេងស្រីម្នាក់បានជួយសង្គ្រោះឆ្កែមួយក្បាល។\n#កម្ពុជា #ព័ត៌មាន");
+  assert.strictEqual(km.headline, "ក្មេងស្រីម្នាក់ជួយសង្គ្រោះឆ្កែពីទឹកជំនន់");
+  assert.ok(km.caption.startsWith("កាលពីម្សិលមិញ"), km.caption);
+  // A "Word:" it doesn't know, in another script, makes it ask.
+  const un = E.analyze("სათაური: ძაღლი გადაარჩინეს წყალდიდობას\n\nათი წლის გოგონამ ძაღლი გადაარჩინა. მეზობლები ტაშს უკრავდნენ.");
+  assert.ok(un.needsConfirm || !un.headline.startsWith("სათაური"));
+});
+
+test("news kickers and attributions aren't mistaken for labels", () => {
+  for (const h of ["BREAKING: TSA ends shoe removal rule at all US airports", "Police: Driver was going 100 mph when he hit the school bus", "WATCH: Firefighters pull kitten from storm drain"]) {
+    const r = E.analyze(h + "\n\nThe change takes effect on Monday, officials said. Travelers welcomed the news.\n\n#travel #news");
+    assert.strictEqual(r.headline, h);
+    assert.strictEqual(r.needsConfirm, false, h);
+    assert.strictEqual(E.analyze(h).needsConfirm, false, h + " pasted alone");
+  }
 });
 
 test("an unlabelled headline starting 'PHOTO:' or 'TIP:' isn't thrown away", () => {
@@ -144,15 +159,29 @@ test("chat-page interface words are never content", () => {
 });
 
 test("unasked chat cards: a tweet or LinkedIn draft isn't a story, a news post is", () => {
-  const reply = (first) => ({ blocks: [first,
-    { tag: "p", text: "We spent six months rebuilding the editor from scratch. It is faster, simpler and works offline now." },
-    { tag: "p", text: "Huge thanks to everyone who tested the beta and sent feedback along the way." },
-    { tag: "p", text: "#buildinpublic #startup #product" }] });
-  const tweet = E.analyze(reply({ tag: "p", bold: true, text: "Just shipped the biggest update we have ever made" }));
+  const reply = (first, voice) => ({ blocks: [first,
+    { tag: "p", text: voice === "we" ? "We spent six months rebuilding the editor from scratch. It is faster, simpler and works offline now."
+      : "The small team spent six months rebuilding the editor from scratch. It is faster, simpler and works offline now." },
+    { tag: "p", text: "Testers who tried the beta say they would not go back." },
+    { tag: "p", text: "#software #startup #product" }] });
+  const tweet = E.analyze(reply({ tag: "p", bold: true, text: "Just shipped the biggest update in years" }, "we"));
   assert.strictEqual(E.isStory(tweet, "strict"), false, "bold sentence-case first line");
+  const launch = E.analyze(reply({ tag: "p", bold: true, text: "Big News: Taskly 2.0 Is Finally Live!" }, "we"));
+  assert.strictEqual(E.isStory(launch, "strict"), false, "a launch post in Title Case");
+  const personal = E.analyze(reply({ tag: "h3", text: "Some personal news" }, "we"));
+  assert.strictEqual(E.isStory(personal, "strict"), false, "a LinkedIn draft under a heading");
   const caps = E.analyze(reply({ tag: "p", bold: true, text: "TEAM REBUILDS EDITOR FROM SCRATCH IN SIX MONTHS" }));
   assert.strictEqual(E.isStory(caps, "strict"), true, "bold CAPS headline");
   const heading = E.analyze(reply({ tag: "h3", text: "Team rebuilds its editor from scratch in six months" }));
   assert.strictEqual(E.isStory(heading, "strict"), true, "a heading");
   assert.strictEqual(E.isStory(tweet, "loose"), true, "still found when you click the toolbar icon");
+});
+
+test("a critique isn't a story, a three-sentence headline is", () => {
+  const post = (h, c) => E.analyze("**Headline:** " + h + "\n\n**Caption:** " + (c || "Joe Turner, 52, found the cash in a parking lot and handed it to police the same day.") + "\n\n**Hashtags:** #honesty #kindness");
+  for (const h of ["Strong overall, but \"stunned\" is overused. Consider a more specific verb.", "8/10 — strong hook, but a little long.", "Works, but I'd tighten it: \"Lost dog finds his way home\"."]) {
+    assert.strictEqual(E.isStory(post(h), "labels"), false, h);
+  }
+  assert.strictEqual(E.isStory(post("HE WAS HOMELESS. HE FOUND $10,000. HE GAVE IT ALL BACK."), "labels"), true);
+  assert.strictEqual(E.isStory(post("She lost her job. Then her home. Then a stranger knocked on her door."), "labels"), true);
 });

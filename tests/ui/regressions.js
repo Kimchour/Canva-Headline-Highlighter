@@ -3,7 +3,7 @@
 
    node tests/ui/regressions.js                                             */
 
-const { serve, check, tally, openCanva, chromium } = require("./harness.js");
+const { serve, check, tally, openCanva, chromium, STUB, read } = require("./harness.js");
 
 const LABELLED = `Sure! Here's your post:
 
@@ -275,6 +275,109 @@ async function runDone(page) {
     const rk = await page.evaluate(() => { const r = window.__hhTest.rankOnPage("GIRL SAVES DOG FROM FLOOD IN BATTAMBANG"); return { top: r.top && r.top.text, conf: r.confidence }; });
     check("the headline at the top is found, or it asks", /OLD HEADLINE/.test(rk.top || "") || rk.conf < 0.6, JSON.stringify(rk));
   });
+
+  await scenario("A headline box written as two lines", seed(), null, async (page) => {
+    await page.evaluate(() => {
+      document.getElementById("headline").innerHTML = '<p>FAMILY STUNNED AS <span style="color:#ffc93c">LOST DOG</span></p><p>RETURNS HOME AFTER THREE YEARS</p>';
+    });
+    await page.click('.hh-tile[data-act="detect"]');
+    await page.waitForTimeout(500);
+    check("Detect reads both lines of the box", /^FAMILY STUNNED AS LOST DOG\s+RETURNS HOME AFTER THREE YEARS$/.test(await head(page)), await head(page));
+  });
+
+  await scenario("The design changed after it was read", seed(), null, async (page) => {
+    await page.click('.hh-tile[data-act="detect"]');
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { document.getElementById("headline").innerHTML = "<p>SECOND HEADLINE TYPED ON THE DESIGN BY HAND</p>"; });
+    await page.click('.hh-tile[data-act="copy"]');
+    await page.waitForTimeout(500);
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    check("Copy All copies what's on the design now", clip.startsWith("SECOND HEADLINE"), JSON.stringify(clip.slice(0, 40)));
+    await page.click('.hh-tile[data-act="highlight"]');
+    await page.waitForTimeout(2500);
+    check("Highlight doesn't write the old reading back", /SECOND HEADLINE/.test(await text(page, "#headline")), await text(page, "#headline"));
+  });
+
+  await scenario("Answering Go ahead? in words", seed(), null, async (page) => {
+    await paste(page, LABELLED);
+    await ask(page, "start over");
+    await ask(page, "go ahead");
+    check("“go ahead” confirms the clear, it doesn't run", (await page.inputValue(".hh-paste")) === "" && !(await page.evaluate(() => window.__pastes)));
+    await paste(page, LABELLED);
+    await ask(page, "start over");
+    const out = await ask(page, "no, just copy the caption");
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    check("“no, just copy the caption” cancels and copies", clip.startsWith("When Max") && (await page.inputValue(".hh-paste")).length > 100, out);
+    await ask(page, "start over");
+    await page.evaluate((t) => window.__onMsg({ type: "hh-story", text: t, source: "ChatGPT" }, {}, () => {}), UNLABELLED);
+    await page.waitForTimeout(500);
+    check("a new story from chat takes away the pending question", (await page.locator(".hh-askgate").count()) === 0);
+  });
+
+  await scenario("Notes opened while the card asks", seed({ confLevel: "careful", runNotes: false }), { twin: true }, async (page) => {
+    await paste(page, UNLABELLED);
+    await page.click("#hh-go");
+    await page.waitForSelector(".hh-askcard:not(.out)", { timeout: 8000 });
+    await page.click("#notesbtn");
+    await page.evaluate(() => { document.getElementById("noteed").innerText = "My notes for this design: photo by Jane Doe"; });
+    await clickCard(page, "Yes");
+    await runDone(page);
+    check("the headline isn't written into Notes", (await page.evaluate(() => document.getElementById("noteed").innerText)).startsWith("My notes"),
+      await page.evaluate(() => document.getElementById("noteed").innerText));
+  });
+
+  await scenario("After a cancelled run", seed({ confLevel: "careful" }), { twin: true }, async (page) => {
+    await paste(page, UNLABELLED);
+    await page.click("#hh-go");
+    await page.waitForSelector(".hh-askcard:not(.out)", { timeout: 8000 });
+    await clickCard(page, "Cancel");
+    await runDone(page);
+    await page.click("#hh-go");
+    const asked = await page.waitForSelector(".hh-askcard:not(.out)", { timeout: 8000 }).then(() => true).catch(() => false);
+    check("the next Run asks again instead of giving up", asked);
+    await clickCard(page, "Cancel");
+  });
+
+  await scenario("A template with a coloured line", seed({ lastPost: { key: "x", text: "x" } }), null, async (page) => {
+    await page.evaluate(() => {
+      const h = document.querySelector(".handle");
+      h.style.top = "560px";
+      const s = document.getElementById("second");
+      s.style.display = "block"; s.style.top = "500px"; s.style.fontSize = "16px";
+      s.innerHTML = '<p>FOLLOW US <span style="color:#ffc93c">FOR THE FULL STORY</span></p>';
+      document.getElementById("headline").style.top = "300px";
+    });
+    const v = await page.evaluate(() => window.__hhTest.pageVerdict("PILOT DIVERTS FLIGHT AFTER PASSENGER REFUSES TO SIT DOWN"));
+    check("a coloured CTA line on a template isn't a finished post", v.why !== "finished", JSON.stringify(v));
+  });
+
+  // ChatGPT puts a post in a code block when asked: a language label and a
+  // Copy button sit above the code.
+  console.log("A post in a ChatGPT code block");
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+    const cp = await cctx.newPage();
+    const cerr = [];
+    cp.on("pageerror", (e) => cerr.push(String(e)));
+    await cp.addInitScript(STUB({ hh: { autoMode: false } }));
+    await cp.goto(base + "/tests/fixtures/chat-mock.html");
+    for (const f of ["engine.js", "chat.js"]) await cp.addScriptTag({ content: read(f) });
+    await cp.waitForTimeout(800);
+    await cp.evaluate(() => {
+      const d = document.createElement("div");
+      d.setAttribute("data-message-author-role", "assistant");
+      d.innerHTML = '<p>Here it is in a code block:</p><pre><div><span>plaintext</span><button>Copy code</button></div><div><code>'
+        + 'Headline: FAMILY STUNNED AS LOST DOG RETURNS HOME AFTER THREE YEARS\n\nCaption: When Max slipped out of the yard in 2023, the Parkers searched for months. Last week a shelter called.\n\nHashtags: #dogs #reunited</code></div></pre>';
+      document.getElementById("thread").appendChild(d);
+    });
+    await cp.waitForFunction(() => { const h = document.getElementById("hh-chat-host"); return h && h.shadowRoot && h.shadowRoot.querySelector(".card .go"); }, null, { timeout: 8000 }).catch(() => {});
+    await cp.evaluate(() => { const g = document.getElementById("hh-chat-host"); if (g) g.shadowRoot.querySelector(".go").click(); });
+    await cp.waitForTimeout(400);
+    const sent = await cp.evaluate(() => window.__sent.filter(m => m.type === "hh-send-story").map(m => m.text));
+    check("the post is found and sent without the code block's label", sent.length === 1 && /^Headline:\nFAMILY STUNNED/.test(sent[0]) && !/plaintext/.test(sent[0]), JSON.stringify(sent[0] || "").slice(0, 80));
+    check("A post in a ChatGPT code block: no script errors", !cerr.length, cerr.join(" | "));
+    await cctx.close();
+  }
 
   await browser.close();
   srv.close();

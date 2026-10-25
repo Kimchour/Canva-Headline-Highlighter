@@ -72,6 +72,26 @@ module.exports = [
   { say: "use option 2", steps: [["option"]], n: 2 },
   { say: "take option 3", steps: [["option"]], n: 3 },
   { say: "repeat", ctx: { lastPlan: [{ op: "copy", fields: ["caption"] }] }, steps: [["repeat"]] },
+  // "no need to", "don't forget to", "don't … or …", a step left out of a run
+  { say: "no need to run it", steps: [["skip"]] },
+  { say: "I don't want you to fill notes", steps: [["skip"]] },
+  { say: "don't highlight it or run it", steps: [["skip"]] },
+  { say: "don't forget to fill the notes", steps: [["notes"]] },
+  { say: "not sure but run it", steps: [["run"]] },
+  { say: "stop and run it", steps: [["run"]] },
+  { say: "run it but don't fill the notes", steps: [["run"]] },
+  { say: "no need to highlight, just copy", steps: [["copy", ["headline", "caption", "hashtags"]]] },
+  // answering "Go ahead?"
+  { say: "go ahead", ctx: { pendingGate: true }, steps: [["confirm"]] },
+  { say: "do it", ctx: { pendingGate: true }, steps: [["confirm"]] },
+  { say: "no, just copy the caption", ctx: { pendingGate: true }, steps: [["copy", ["caption"]]] },
+  // more undo, clear and set wording
+  { say: "undo the fill and the line up", steps: [["undo"]] },
+  { say: "take back the line up", steps: [["undo"]] },
+  { say: "remove the hashtags from the caption", steps: [["clearfield"]] },
+  { say: "drop the caption in the notes", steps: [["notes"]] },
+  { say: "set the headline to option two", steps: [["option"]], n: 2 },
+  { say: "change the headline to the one from option 2", steps: [["option"]], n: 2 },
   // not understood: must say so rather than guess
   { say: "blah blah", steps: [] },
   { say: "what is the weather like", steps: [] }

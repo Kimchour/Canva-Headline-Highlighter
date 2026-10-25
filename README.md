@@ -82,7 +82,9 @@ publishing it.
    disagree.
 4. Commit everything, including the new zip. Then set `download` in `version.json` to that
    commit's zip, `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/canva-headline-highlighter.zip`,
-   and commit `version.json` on its own. Push both commits to `main` together.
+   run `npm run build` again — it stops unless that commit holds this exact zip for this
+   version (the zip comes out byte for byte the same) — and commit `version.json` on its
+   own. Push both commits to `main` together.
 
    A link to a commit never changes. GitHub caches `main`'s files for up to five minutes and
    ignores `?v=`, so a link to `main` could hand out the old zip next to the new

@@ -17,7 +17,8 @@
     ["automation_on", /\b(?:(?:turn|switch|put) on automation|(?:turn|switch) automation on|enable automation|automation on|start automation)\b/],
     ["automation_off", /\b(?:(?:turn|switch) off automation|(?:turn|switch) automation off|disable automation|automation off|stop automation)\b/],
     // "clear the hashtags" empties that field; "clear" alone is the whole panel.
-    ["clearfield", /\b(?:clear|remove|delete|empty|drop|erase|wipe|get rid of)(?: out)?(?: the| my| all(?: the)?)? (?:headlines?|titles?|captions?|hash ?tags?|tags)\b/],
+    // Not "delete the caption's last line": that's an edit, not emptying it.
+    ["clearfield", /\b(?:clear|remove|delete|empty|drop|erase|wipe|get rid of)(?: out)?(?: the| my| all(?: the)?)? (?:headlines?|titles?|captions?|hash ?tags?|tags)\b(?!'s|’s| (?:last |first )?(?:line|lines|sentence|sentences|word|words|emoji|emojis|paragraph|paragraphs)\b)/],
     ["clear", /\b(?:clear(?: (?:it|all|everything|the box))?|reset|start over|start again|new post|wipe|empty the box|next post)\b/],
     ["navigate", /\b(?:go to|go back to|open|show(?: me)?|take me to|switch to|back to)(?: the| my)? (?:settings|options|preferences|tools|studio|home)\b/],
     ["confirm", /^(?:yes|yep|yeah|correct|right|that'?s (?:it|right|correct|the one)|confirm|looks good|use (?:it|that|this)|ok(?:ay)?|good|perfect)\b/],
@@ -25,12 +26,12 @@
     // ("copy the caption again", "not the caption"): on their own they count
     // as "look again" (see wholeAsk), not here.
     ["reanalyze", /\b(?:fix(?: (?:it|the selection|that|this|the headline|the detection))?|re-?analy[sz]e|re-?detect|re-?check|re-?scan|re-?do|redo|retry|try again|wrong(?: one| headline| title)?|incorrect|that'?s not (?:it|right|correct|the (?:right )?(?:one|headline|title))|isn'?t (?:it|right|correct|the (?:right )?(?:one|headline|title))|not (?:that|this) one|other one|different one|next (?:one|candidate)|another (?:one|candidate)|correct (?:the|it|this)|look again|pick another)\b/],
-    ["undo", /\b(?:undo|put (?:it )?back|revert)\b/],
+    ["undo", /\b(?:undo|put (?:it )?back|revert|take (?:it )?back|reverse)\b/],
     ["locate", /\b(?:locate|where(?:'?s| is| are)|point (?:to|at|out)|show (?:me )?where|which (?:one|text|box) is)\b/],
     ["highlight", /\b(?:highlight|colou?r(?: in)?|paint|mark|emphasi[sz]e|accent)\b/],
     // Only with a verb: "what's in the notes?" must not overwrite them.
-    ["notes", /\b(?:(?:fill|send|put|write|paste|add|update)(?: [a-z]+){0,3} (?:in|into|to) (?:the )?notes|fill (?:in )?(?:the )?notes)\b/],
-    ["lineup", /\b(?:line(?:s)? (?:it |them )?up|line-?up|align|cent(?:er|re)|fit (?:the )?(?:headline|title|text|it))\b/],
+    ["notes", /\b(?:(?:fill|send|put|write|paste|add|update|drop|move|copy)(?: [a-z]+){0,3} (?:in|into|to) (?:the )?notes|fill (?:in )?(?:the )?notes)\b/],
+    ["lineup", /\b(?:line(?:s)? (?:it |them )?up|line-?up|align(?:ment)?|cent(?:er|re)|fit (?:the )?(?:headline|title|text|it))\b/],
     ["fill", /\b(?:fill (?:the )?(?:page|design|it|frame)?\s*(?:with (?:the )?(?:photo|image|picture))|fill with photo|photo fill)\b/],
     ["photo", /\b(?:enhance|improve|sharpen|adjust|auto-?adjust)(?: (?:the|my))? (?:photo|image|picture)|(?:photo|image|picture) (?:enhance|adjust)/],
     ["censor", /\b(?:censor|bleep|mask|clean up (?:the )?(?:words|language))\b/],
@@ -53,7 +54,7 @@
     ["prev", /\b(?:it|that|them|those|this|these|the same)\b/]
   ];
 
-  const ORDINALS = { first: 1, "1st": 1, one: 1, second: 2, "2nd": 2, two: 2, third: 3, "3rd": 3, three: 3,
+  const ORDINALS = { first: 1, "1st": 1, one: 1, second: 2, "2nd": 2, two: 2, third: 3, "3rd": 3, three: 3, a: 1, b: 2, c: 3, d: 4, e: 5,
     fourth: 4, "4th": 4, four: 4, fifth: 5, "5th": 5, five: 5, last: -1 };
 
   const FIELD_NAMES = { headline: "headline", caption: "caption", hashtags: "hashtags" };
@@ -97,10 +98,18 @@
   const REPEAT_RE = /^(?:again|try again|retry|one more time|repeat(?: it| that)?|do (?:it|that) again)$/;
 
   // "don't run it", "stop the run", "without highlighting": the verb is off.
-  const NEG_VERB = /(?:^| )(?:don'?t|do not|never|not|stop|without|no need to|skip|avoid|instead of|rather than|no)(?: [^ ,]+){0,2} ?$/;
+  // Only small words may sit between: "don't run it", "stop the run", "don't
+  // even copy it" — never "not sure but run it" or "stop and run it".
+  const NEG_VERB = /(?:^| )(?:don'?t|do not|never|not|stop|without|skip|avoid|instead of|rather than|no|forget)(?: (?:it|them|the|this|that|yet|now|just|even|ever|really|please|you|to|a|an|my|any|about))* ?$/;
+  // "no need to run it" and "I don't want you to fill notes" say "don't";
+  // "don't forget to fill notes" says "please".
+  const POSITIVE_RE = /\b(?:(?:don'?t|do not) (?:forget|hesitate)(?: to)?|remember to|make sure (?:to|you)|be sure to)\b/g;
+  const NEGATIVE_RE = /\b(?:there'?s )?(?:no need to|(?:i )?(?:don'?t|do not) (?:want|need)(?: you)? to)\b/g;
   // "not the caption", "everything except the hashtags": the field is out.
   const NEG_TARGET = /(?:^| )(?:not|no|without|except|excluding|exclude|minus|but|apart from|other than|leave out|leave off|skip)(?: (?:the|my|any|its|their))? ?$/;
-  const NEG_WORDS = /(?:^| )(?:don'?t|do not|never|not|stop|without|no need to|skip|avoid|instead of|rather than|except|excluding|exclude|minus|apart from|other than|leave out|leave off)(?= |$)/g;
+  const NEG_WORDS = /(?:^| )(?:don'?t|do not|never|not|stop|without|skip|avoid|instead of|rather than|except|excluding|exclude|minus|apart from|other than|leave out|leave off|forget|dont)(?= |$)/g;
+  // "go ahead", "do it" answering "Go ahead?" (or the card) means yes.
+  const GO_YES = /^(?:(?:ok(?:ay)?|yes|yeah|yep|sure)\s*)?(?:go|go ahead|go for it|do it|proceed|please do|yes please|sure|carry on|continue|ok(?:ay)? go)$/;
 
   // Every match of every pattern, then the longest non-overlapping ones.
   function scan(text, table) {
@@ -155,7 +164,9 @@
   const OTHER_RE = /^(?:the |an? )?(?:other|next|another|different)(?: (?:one|option|version|candidate|headline|title))?$/;
 
   // "set the headline to …", "change the caption to …" keep your exact words.
-  function setCommand(raw) {
+  const SPELLED = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  function setCommand(raw, ctx) {
+    ctx = ctx || {};
     const m = String(raw || "").match(/^\s*(?:set|change|make|replace|rename|update)\s+(?:the\s+)?(headline|title|caption|hashtags?|tags)\s+(?:to|with|as|=|:)\s*([\s\S]+)$/i);
     if (!m) return null;
     const k = m[1].toLowerCase();
@@ -168,17 +179,23 @@
       const ref = v.match(REF_RE);
       if (ref) {
         const n = ref[3] ? +ref[3] : ORDINALS[ref[1]];
-        return { op: OPTION_WORDS.test(v) || field !== "headline" ? "option" : "pick", n };
+        const opt = OPTION_WORDS.test(v) || field !== "headline" || (ctx.hasOptions && !ctx.hasCandidates);
+        return { op: opt ? "option" : "pick", n };
       }
       if (OTHER_RE.test(v)) return { op: "reanalyze" };
+      // "option two", "the one from option 2", "whatever version 2 says"
+      const om = v.split(" ").length <= 7 && v.match(/\b(?:option|version)\s*#?\s*(\d{1,2}|one|two|three|four|five|[a-e])\b/);
+      if (om) return { op: "option", n: /^\d/.test(om[1]) ? +om[1] : SPELLED[om[1]] || ORDINALS[om[1]] };
     }
-    // A few words led by "the" / "my" ("the new text") are more likely a
-    // description than the words themselves: check before using them.
-    const unsure = !quoted && value.split(/\s+/).length <= 4 && /^(?:the|a|an|this|that|these|those|my|it|its|what|which|new|other)\b/i.test(value);
+    // A few words led by "the" / "my" ("the new text", "the one on the
+    // design") are more likely a description than the words themselves:
+    // check before using them.
+    const unsure = !quoted && value.split(/\s+/).length <= 6 && /^(?:the|a|an|this|that|these|those|my|it|its|what|whatever|which|new|other)\b/i.test(value);
     return { op: "set", field, value, unsure };
   }
 
   const UNDO_WHAT = { lineup: "line-up", fill: "photo fill" };
+  const UNDOABLE = ["lineup", "fill", "photo", "highlight", "run", "censor", "notes", "clear", "strength"];
 
   function describe(steps) {
     return steps.map(s => {
@@ -189,9 +206,10 @@
       if (s.op === "set") return "Set " + s.field + (s.value ? " to “" + (s.value.length > 40 ? s.value.slice(0, 40) + "…" : s.value) + "”" : "");
       if (s.op === "clearfield") return "Clear " + (s.fields || []).join(" + ");
       if (s.op === "navigate") return "Open " + s.view;
-      if (s.op === "undo" && s.what) return "Undo " + (UNDO_WHAT[s.what] || (OP_LABEL[s.what] || s.what).toLowerCase());
+      if (s.op === "undo" && s.what && s.what.length) return "Undo " + [].concat(s.what).map(w => UNDO_WHAT[w] || (OP_LABEL[w] || w).toLowerCase()).join(" + ");
       if (s.op === "unsupported") return "Can't " + s.what;
       if (s.op === "skip") return "Nothing — you said not to " + (s.what || []).map(w => (OP_LABEL[w] || w).toLowerCase()).join(" or ");
+      if (s.op === "run" && s.skip && s.skip.length) return base + " without " + s.skip.map(w => (OP_LABEL[w] || w).toLowerCase()).join(" or ");
       if (s.op === "strength") return "Highlight " + s.level;
       if (s.op === "automation") return "Automation " + (s.on ? "on" : "off");
       return base + (s.from === "page" ? " on the design" : "");
@@ -202,13 +220,20 @@
   function parse(input, ctx) {
     ctx = ctx || {};
     const raw = String(input || "").trim();
-    const text = prep(raw);
+    const text = prep(raw).replace(POSITIVE_RE, "please").replace(NEGATIVE_RE, "dont").replace(/\s+/g, " ").trim();
     const plain = bare(text);
     const out = { input: raw, steps: [], understood: false, confidence: 0, summary: "", followUp: false, unknown: [] };
     if (raw === "?") { out.steps = [{ op: "help" }]; out.understood = true; out.confidence = 1; out.summary = "Help"; return out; }
     if (!text) return out;
 
-    const set = setCommand(raw);
+    // "go ahead" answering the panel's question
+    if ((ctx.pendingGate || ctx.pendingAsk) && GO_YES.test(plain)) {
+      out.steps = [{ op: "confirm" }];
+      out.understood = true; out.confidence = 1; out.summary = describe(out.steps);
+      return out;
+    }
+
+    const set = setCommand(raw, ctx);
     if (set) {
       if (set.op === "reanalyze") set.surface = ctx.lastSurface || "text";
       if (set.op === "set" && !set.unsure) delete set.unsure;
@@ -245,18 +270,24 @@
       let pending = [], pendingEx = [], prevEnd = 0;
       tokens.forEach(tk => {
         const before = text.slice(Math.max(prevEnd, text.lastIndexOf(",", tk.at - 1) + 1), tk.at);
+        const gap = text.slice(prevEnd, tk.at);
         prevEnd = Math.max(prevEnd, tk.end);
         if (tk.kind === "v") {
-          const step = { op: tk.key, text: tk.text, at: tk.at, end: tk.end, targets: pending, exclude: pendingEx };
+          const step = { op: tk.key, text: tk.text, at: tk.at, end: tk.end, targets: pending, exclude: pendingEx, joined: [] };
           pending = []; pendingEx = [];
-          if (NEG_VERB.test(before)) step.neg = true;
+          const prev = steps[steps.length - 1];
+          // "don't highlight it or run it": the "don't" covers both.
+          if (NEG_VERB.test(before) || (prev && prev.neg && /^(?: (?:it|them|that|this|the [a-z]+))? (?:or|nor)(?: (?:the|to))? $/.test(gap))) step.neg = true;
           steps.push(step);
           return;
         }
         const last = steps[steps.length - 1];
         const ex = NEG_TARGET.test(before);
-        if (last) (ex || last.neg ? last.exclude : last.targets).push(tk.key);
-        else (ex ? pendingEx : pending).push(tk.key);
+        if (last) {
+          (ex || last.neg ? last.exclude : last.targets).push(tk.key);
+          // "clear the caption and hashtags": joined straight on, not "from the caption".
+          if (!ex && /^(?: ?(?:and|,|plus)(?: the| my)?)+ $/.test(gap)) last.joined.push(tk.key);
+        } else (ex ? pendingEx : pending).push(tk.key);
       });
       steps.forEach(s => { s.own = s.targets.slice(); });
       // Verbs with nothing between them share the next targets.
@@ -266,13 +297,26 @@
           steps[i].exclude = steps[i].exclude.concat(steps[i + 1].exclude);
         }
       }
-      // "undo the line up" names what to undo; it isn't a second step.
-      for (let i = 0; i < steps.length - 1; i++) {
-        const a = steps[i], b = steps[i + 1];
-        if (a.op === "undo" && !a.what && !a.neg && !b.neg && /^(?: (?:the|my|that|this|last|a))* ?$/.test(text.slice(a.end, b.at))) {
-          a.what = b.op;
+      // "undo the line up", "undo the fill and the line up": what to undo,
+      // not more steps.
+      for (let i = 0; i < steps.length; i++) {
+        const a = steps[i];
+        if (a.op !== "undo" || a.neg) continue;
+        a.what = [];
+        let end = a.end;
+        while (i + 1 < steps.length) {
+          const b = steps[i + 1];
+          const gap = text.slice(end, b.at);
+          if (b.neg || !UNDOABLE.includes(b.op) || !/^(?: (?:the|my|that|this|last|a|and|photo|fill))* ?$/.test(gap)) break;
+          if (/\bfill\b/.test(gap)) a.what.push("fill");
+          a.what.push(b.op);
+          end = b.end;
           steps.splice(i + 1, 1);
         }
+        const rest = text.slice(end).split(/ ,| then /)[0];
+        if (/^(?: (?:the|my|that|this|last|a|and|photo))* fill\b/.test(rest)) a.what.push("fill");
+        a.what = uniq(a.what);
+        if (!a.what.length) delete a.what;
       }
 
       // "I don't want the hashtags" means everything else; "don't copy it"
@@ -328,7 +372,9 @@
             break;
           }
           case "clearfield":
-            s.fields = ALL.filter(f => fieldsInWords(s.text).includes(f) || fieldsOnly(ts).includes(f));
+            // Only the field it names, and any joined straight on; never one
+            // after "from", "in" or "keep".
+            s.fields = ALL.filter(f => fieldsInWords(s.text).includes(f) || fieldsOnly(s.joined || []).includes(f));
             break;
           case "navigate":
             s.view = /setting|option|preference/.test(s.text) ? "settings" : /tool/.test(s.text) ? "tools" : "studio";
@@ -350,10 +396,16 @@
           case "automation_off": s.op = "automation"; s.on = false; break;
           case "confirm": if (!ctx.pendingConfirm) s.op = "noop"; break;
           case "notes": s.fields = ["caption", "hashtags"]; break;
+          case "run": {
+            // "run it but don't fill the notes": that step is left out.
+            const off = offOps.filter(o => ["notes", "highlight", "lineup", "fill", "photo", "censor"].includes(o));
+            if (off.length) s.skip = off;
+            break;
+          }
           default: break;
         }
         if (!s.fields) delete s.fields;
-        ["targets", "exclude", "own", "text", "at", "end", "neg"].forEach(k => delete s[k]);
+        ["targets", "exclude", "own", "text", "at", "end", "neg", "joined"].forEach(k => delete s[k]);
       });
 
       // "use option 2" / "take version 3": only the option, not also a pick

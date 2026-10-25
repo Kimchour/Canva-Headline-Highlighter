@@ -49,6 +49,14 @@ test("the repo's version.json matches the extension's manifest", () => {
   assert.strictEqual(vj.version, mf.version);
   assert.ok(U.normalize(vj), "version.json reads cleanly");
   // A commit's zip (never changes), or main's with ?v=<version>.
-  assert.ok(/\/[0-9a-f]{40}\/canva-headline-highlighter\.zip$/.test(vj.download) || vj.download.endsWith("?v=" + vj.version), vj.download);
+  const pin = vj.download.match(/\/([0-9a-f]{40})\/canva-headline-highlighter\.zip$/);
+  assert.ok(pin || vj.download.endsWith("?v=" + vj.version), vj.download);
+  if (pin) {
+    // That commit holds this version, not the last release's.
+    const { execFileSync } = require("child_process");
+    let mf = null;
+    try { mf = JSON.parse(execFileSync("git", ["-C", root, "show", pin[1] + ":sat-highlighter/manifest.json"], { stdio: ["ignore", "pipe", "ignore"] }).toString()); } catch (e) {}
+    if (mf) assert.strictEqual(mf.version, vj.version, "the pinned commit is this version's");
+  }
   assert.strictEqual(U.safeDownload(vj.download, vj.version), vj.download, "the update check accepts the link as it is");
 });

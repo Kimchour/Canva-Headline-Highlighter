@@ -35,7 +35,9 @@
   //   "loose":  anything with a headline and a caption (only when you ask)
   // A cheap first look, so a long chat isn't analysed reply by reply: a story
   // has Headline/Caption-style labels or at least two hashtags.
-  const LABEL_WORDS = (t) => /\b(?:headline|title|hook)s?\b/i.test(t) && /\b(?:caption|body|story)\b/i.test(t);
+  // A label is a word at the start of a line, before a colon or on its own.
+  const LABEL_WORDS = (t) => /(?:^|\n)[\s*_#>\-\d.)]*(?:headline|title|hook)s?\b[^\n:]{0,24}(?::|\s*$|\s*\n)/im.test(t)
+    && /(?:^|\n)[\s*_#>\-\d.)]*(?:caption|body|story)\b[^\n:]{0,24}(?::|\s*$|\s*\n)/im.test(t);
   const TWO_TAGS = /(?:^|[^\p{L}\p{N}_&\/#])#[\p{L}\p{N}_][\s\S]*?(?:^|[^\p{L}\p{N}_&\/#])#[\p{L}\p{N}_]/u;
   const mayHoldStory = (t) => LABEL_WORDS(t) || TWO_TAGS.test(t);
 
@@ -54,9 +56,9 @@
     if (!E.isStory(r, mode)) return null;
     const labelled = E.isStory(r, "labels");
     if (techy && !labelled) return null;
-    // Even when you ask, a reply needs a post's shape: labels, a heading or
-    // bold headline over the story, or hashtags.
-    if (mode === "loose" && !(r.strategy === "labels" || r.strategy === "structure" || r.hashtags.length)) return null;
+    // Even when you ask, a reply needs a post's shape: Headline and Caption
+    // labels, or hashtags. A recipe or an essay with headings has neither.
+    if (mode === "loose" && !labelled && !r.hashtags.length) return null;
     return {
       story: { headline: r.headline, caption: r.caption, tags: r.hashtags },
       options: r.options ? r.options.length : 1,
@@ -140,9 +142,19 @@
     clearTimeout(timer);
     const nodes = replies();
     let found = null, node = null;
-    for (let i = nodes.length - 1; i >= 0 && !found; i--) {
+    // The newest replies only: a story far back in a long chat isn't offered,
+    // and opening that chat doesn't read every old reply.
+    for (let i = nodes.length - 1; i >= Math.max(0, nodes.length - 40) && !found; i--) {
       const f = cachedExtract(nodes[i]);
       if (f) { found = f; node = nodes[i]; }
+    }
+    // You asked while it was still writing: look the way the toolbar icon does.
+    if (!found && cardMode === "waiting") {
+      for (let i = nodes.length - 1; i >= Math.max(0, nodes.length - 4) && !found; i--) {
+        if (streaming(nodes[i])) { timer = setTimeout(scan, 1200); return; }
+        const f = cachedExtract(nodes[i], "loose");
+        if (f) { found = f; node = nodes[i]; }
+      }
     }
     if (!found) return;
     if (streaming(node)) { live.add(node); timer = setTimeout(scan, 1200); return; }
@@ -158,9 +170,11 @@
     if (Date.now() - candidate.since < 1400) { timer = setTimeout(scan, 800); return; }
 
     latest = { key, found };
-    if (seen.has(key)) return;
     // Only a labelled story goes in by itself; an unlabelled one always asks.
-    if (autoMode && found.labelled && isLive(node) && cardMode !== "busy") { autoSend(found, key); return; }
+    if (!seen.has(key) && autoMode && found.labelled && isLive(node) && cardMode !== "busy") { autoSend(found, key); return; }
+    // "Still writing…": the finished story takes its place, as you asked.
+    if (cardMode === "waiting") { showCard(found, key); return; }
+    if (seen.has(key)) return;
     if (!cardOpen) { showCard(found, key); return; }
     // An offer you haven't answered is replaced by a newer story, or by the
     // finished version of the one shown. A card that's sending or showing a
@@ -200,12 +214,16 @@
     chrome.runtime.onMessage.addListener((m) => {
       if (!m || m.type !== "hh-toggle") return;
       if (cardOpen) { closeCard(); return; }
-      if (latest) { showCard(latest.found, latest.key); return; }
-      // You asked: look harder at the newest replies, labels or not. A reply
-      // still being written isn't offered: its caption isn't finished.
+      // A reply still being written comes first: its story isn't finished,
+      // and an older one isn't what you're after.
       const nodes = replies();
+      if (nodes.length && streaming(nodes[nodes.length - 1])) {
+        showEmpty("Still writing \u2014 I'll offer the story when the reply is finished.", "waiting");
+        return;
+      }
+      if (latest) { showCard(latest.found, latest.key); return; }
+      // You asked: look harder at the newest replies, labels or not.
       for (let i = nodes.length - 1; i >= Math.max(0, nodes.length - 4); i--) {
-        if (streaming(nodes[i])) { showEmpty("Still writing \u2014 I'll offer the story when the reply is finished."); return; }
         const f = cachedExtract(nodes[i], "loose");
         if (f) { showCard(f, keyOf(f.story)); return; }
       }
@@ -218,7 +236,7 @@
   let host = null, shadow = null, cardOpen = false;
   let shownKey = null;     // story on the open card
   let shownBlock = null;   // and exactly what it would send
-  let cardMode = null;     // "offer" | "busy" | "result"
+  let cardMode = null;     // "offer" | "busy" | "result" | "waiting"
 
   const CSS = `
     :host { all: initial; }
@@ -406,8 +424,8 @@
     shadow.querySelector(".no").onclick = () => closeCard();
   }
 
-  function showEmpty(msg) {
-    cardMode = "result";
+  function showEmpty(msg, mode) {
+    cardMode = mode || "result";
     frame('<div class="note">' + esc(msg || "No finished story in this chat yet \u2014 a reply needs a headline and a caption.") + '</div>'
       + '<div class="row"><button class="no">OK</button></div>');
     shadow.querySelector(".no").onclick = () => closeCard();

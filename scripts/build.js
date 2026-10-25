@@ -2,7 +2,14 @@
    update check expects it: one sat-highlighter/ folder holding the extension.
 
    Refuses to build when version.json and the manifest disagree, because the
-   update check would then tell everyone to update forever.
+   update check would then tell everyone to update forever. When the download
+   link points at a commit, that commit must hold this exact zip for this
+   version: a link left over from the last release, or to a commit that was
+   never pushed, would hand out the wrong zip.
+
+   The zip is the same bytes every time for the same files (its dates come
+   from version.json), so building again after the release commit changes
+   nothing.
 
    node scripts/build.js            (no dependencies; plain Node)            */
 
@@ -33,9 +40,10 @@ const CRC = (() => {
   return (buf) => { let c = 0xffffffff; for (const b of buf) c = t[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
 })();
 
-const now = new Date();
-const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xffff;
-const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
+const dm = String(vj.date || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+const [yy, mm, dd] = dm ? [+dm[1], +dm[2], +dm[3]] : [2026, 1, 1];
+const dosTime = (12 << 11) & 0xffff;
+const dosDate = (((yy - 1980) << 9) | (mm << 5) | dd) & 0xffff;
 
 const entries = [{ name: "sat-highlighter/", data: Buffer.alloc(0) }]
   .concat(FILES.map(f => ({ name: "sat-highlighter/" + f, data: fs.readFileSync(path.join(SRC, f)) })));
@@ -67,6 +75,18 @@ const cd = Buffer.concat(central);
 const end = Buffer.alloc(22);
 end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10);
 end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
-fs.writeFileSync(OUT, Buffer.concat(parts.concat([cd, end])));
+const zip = Buffer.concat(parts.concat([cd, end]));
+
+const pinned = String(vj.download).match(/\/([0-9a-f]{40})\/canva-headline-highlighter\.zip$/);
+if (pinned) {
+  const { execFileSync } = require("child_process");
+  const git = (...a) => execFileSync("git", ["-C", ROOT].concat(a), { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20 });
+  let atSha = null, mfAtSha = null;
+  try { atSha = git("show", pinned[1] + ":canva-headline-highlighter.zip"); mfAtSha = JSON.parse(git("show", pinned[1] + ":sat-highlighter/manifest.json").toString()); }
+  catch (e) { fail("version.json's download link points at commit " + pinned[1].slice(0, 7) + ", which this repo doesn't have with a zip in it. Commit and push the zip first, then point the link at that commit."); }
+  if (mfAtSha.version !== vj.version) fail("version.json's download link points at a commit with version " + mfAtSha.version + ", not " + vj.version + " — it's left over from an earlier release.");
+  if (!atSha.equals(zip)) fail("The zip at commit " + pinned[1].slice(0, 7) + " isn't this build. Commit this zip, then point the download link at that commit.");
+}
+fs.writeFileSync(OUT, zip);
 console.log("Built " + path.relative(ROOT, OUT) + " — version " + manifest.version + ", " + FILES.length + " files, "
   + Math.round(fs.statSync(OUT).size / 1024) + " KB.");

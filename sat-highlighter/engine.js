@@ -34,27 +34,43 @@
     "image text", "thumbnail text", "banner text", "big text", "news headline", "story headline",
     // Spanish, Portuguese, French, Italian, German, Indonesian
     "titular", "título", "titulo", "encabezado", "manchete", "titre", "titolo", "titel", "überschrift",
-    "schlagzeile", "judul"]);
+    "schlagzeile", "judul",
+    // Swedish, Danish/Norwegian, Dutch, Polish, Czech, Turkish, Romanian, Hungarian,
+    // Finnish, Tagalog, Malay, Russian/Ukrainian
+    "rubrik", "overskrift", "kopregel", "nagłówek", "tytuł", "nadpis", "titulek", "başlık", "titlu", "cím",
+    "otsikko", "pamagat", "tajuk", "заголовок", "назва", "kop",
+    // Khmer, Vietnamese, Hindi, Thai, Chinese, Japanese, Korean
+    "ចំណងជើង", "tiêu đề", "tít", "शीर्षक", "हेडलाइन", "พาดหัว", "หัวข้อ", "标题", "標題", "見出し", "タイトル",
+    "ヘッドライン", "제목", "헤드라인"]);
   addLabels("caption", ["caption", "description", "long caption", "short caption", "full caption", "main caption",
     "caption long", "post caption", "instagram caption", "ig caption", "facebook caption", "fb caption",
     "tiktok caption", "caption text", "caption and hashtags", "caption hashtags", "caption with hashtags",
     "description and hashtags", "story caption",
     "texto", "descripción", "descripcion", "leyenda", "pie de foto", "legenda", "légende", "legende", "texte",
-    "beschreibung", "bildunterschrift", "didascalia", "keterangan"]);
+    "beschreibung", "bildunterschrift", "didascalia", "keterangan",
+    "bildtext", "billedtekst", "bildetekst", "bijschrift", "onderschrift", "podpis", "opis", "popisek", "açıklama",
+    "descriere", "képaláírás", "kuvateksti", "kapsyen", "deskripsyon", "paglalarawan", "подпись", "описание", "підпис", "опис",
+    "អត្ថបទ", "ការពិពណ៌នា", "chú thích", "mô tả", "कैप्शन", "विवरण", "คำบรรยาย", "แคปชั่น", "文案", "配文",
+    "说明", "說明", "キャプション", "本文", "캡션", "본문", "설명"]);
   addLabels("caption", ["body", "story", "post", "post text", "copy", "text", "summary", "main text", "content"], { weak: true });
   addLabels("capx", ["cta", "call to action", "closing", "closing line", "sign off", "sign-off"]);
   addLabels("tags", ["hashtags", "hashtag", "tags", "tag", "keywords", "hashtag set", "suggested hashtags",
-    "hashtag list", "relevant hashtags", "etiquetas", "mots clés", "mots-clés", "schlagwörter"]);
+    "hashtag list", "relevant hashtags", "etiquetas", "mots clés", "mots-clés", "schlagwörter",
+    "हैशटैग", "แฮชแท็ก", "话题", "標籤", "标签", "ハッシュタグ", "해시태그"]);
   addLabels("alt", ["alternative headlines", "alternative headline", "other headlines", "headline options",
     "alt headlines", "more headlines", "backup headlines", "headline ideas", "alternatives"]);
-  // Notes about the post, left out of it. "soft" ones are also everyday words
-  // ("Tip:", "Why?", "Photo:"), so inside a caption they stay as caption text.
+  // Notes about the post, left out of it. "soft" ones are also everyday words:
+  // "Tip:", "Photo:", "Disclaimer:" stay caption text inside a caption, and
+  // the assistant's own ("Note:", "Why:", "Angle:", "Tone:") do only in the
+  // middle of a paragraph; starting a paragraph or a line of their own after
+  // the story, they're the assistant talking, as 3.4 read them.
   addLabels("drop", ["sources", "source", "references", "reference", "credit", "credits", "links", "link",
     "rating", "rated", "why it works", "image prompt", "prompt", "visual idea", "image idea", "image description",
     "photo idea", "alt text", "character count", "characters", "word count", "posting time",
     "best time to post", "engagement tip", "fact check"]);
-  addLabels("drop", ["notes", "note", "via", "why", "angle", "tone", "format", "visual", "visuals", "image", "photo",
-    "length", "tip", "tips", "explanation", "reasoning", "disclaimer", "score"], { soft: true });
+  addLabels("drop", ["notes", "note", "why", "angle", "tone", "format", "visual", "visuals", "image", "length",
+    "explanation", "reasoning", "score"], { soft: true, meta: true });
+  addLabels("drop", ["via", "photo", "tip", "tips", "disclaimer"], { soft: true });
 
   // The label words 3.4 knew. A story sent from a chat page on its own
   // (Automation) needs a headline and a caption labelled with these.
@@ -73,10 +89,15 @@
   // Chat before a post: "Sure! Here's your post:", "Absolutely, here are three options".
   // Openers like "Yes, you read that right." also match, so this only ever
   // decides unlabelled text, never a labelled caption.
-  const INTRO_RE = /^(?:(?:sure|okay|ok|absolutely|of course|certainly|alright|all right|got it|perfect|no problem|definitely|yes|yep|awesome|great(?: question| idea| choice)?|happy to help|done)(?:\s*[!,.:;—–]|\s+(?:here|this|i|i'm|i’m|i've|i’ve|let)\b)|here(?:'s|’s| is| are)(?: (?:your|a|an|the|my|some|two|three|four|five|\d+))?(?: [\w’'-]+){0,3}? (?:post|posts|draft|drafts|caption|captions|version|versions|headline|headlines|story|stories|rewrite|take|option|options|idea|ideas|copy|text)\b|here you go|here it is|below (?:is|are)|i(?:'ve|’ve| have) (?:written|created|made|drafted|put together|prepared|come up with|rewritten)|i (?:wrote|made|created|drafted|rewrote)|this (?:is|was) (?:a|an|the|your|my) (?:post|caption|version|draft|headline|rewrite|take|shorter|longer|punchier)|this (?:post|version|draft)\b|let me\b|happy to\b|as requested|thanks for\b|thank you for\b|good (?:call|catch))/i;
+  const INTRO_RE = /^(?:(?:sure(?: thing)?|okay|ok|absolutely|of course|certainly|alright|all right|got it|perfect|no problem|definitely|yes|yep|awesome|great(?: question| idea| choice)?|happy to help|done|love (?:it|this|that)|sounds good|you got it|totally|nice|cool|will do)(?:\s*[!,.:;—–]|\s+(?:here|this|i|i'm|i’m|i've|i’ve|let)\b)|here(?:'s|’s| is| are)(?: (?:your|a|an|the|my|some|two|three|four|five|\d+))?(?: [\w’'-]+){0,3}? (?:post|posts|draft|drafts|caption|captions|version|versions|headline|headlines|story|stories|rewrite|take|option|options|idea|ideas|copy|text)\b|here you go|here it is|below (?:is|are)|i(?:'ve|’ve| have) (?:written|created|made|drafted|put together|prepared|come up with|rewritten)|i (?:wrote|made|created|drafted|rewrote)|this (?:is|was) (?:a|an|the|your|my) (?:post|caption|version|draft|headline|rewrite|take|shorter|longer|punchier)|this (?:post|version|draft)\b|let me\b|happy to\b|as requested|thanks for\b|thank you for\b|good (?:call|catch))/i;
   // The assistant's own follow-up offers, the only chat trimmed off the end of
   // a caption (the same short list 3.4 used, plus a few close cousins).
   const OFFER_RE = /^(?:let me know|want me to|would you like|if you(?:'d|’d| would) like|i can also|happy to|shall i|do you want|i hope this helps|hope this helps|feel free to (?:tweak|adjust|edit|change|modify|use)|(?:want|need) (?:a|an|another) (?:shorter|longer|different|new|punchier|alternative)?\s*(?:version|one|take|caption|headline|draft)|i can (?:make|write|create|adjust|shorten|tweak|turn|rewrite)|should i (?:make|write|create|adjust|shorten|rewrite))\b/i;
+  // An offer about the text itself ("Want me to make it shorter?", "Let me
+  // know if you'd like any changes!"). A post's own call to action ("Let me
+  // know in the comments", "Would you like to see more?") doesn't name the
+  // writing, so it stays.
+  const ASSIST_RE = /^(?:(?:want me to|would you like (?:me to|a|an|another|the)|do you want (?:me to|a|an|another)|should i|shall i|i can (?:also )?|i could (?:also )?|let me know if you(?:'d|’d| would)? (?:like|want|need)|if you(?:'d|’d| would) like|feel free to|happy to|need (?:a|an|another|me to)|want (?:a|an|another))\b[^\n]{0,80}?\b(?:versions?|captions?|headlines?|drafts?|shorter|longer|punchier|catchier|simpler|stronger|tone|emojis?|hashtags|changes|tweaks?|tweak|edits?|edit|adjust\w*|rewrite|rephrase|shorten|lengthen|tighten|variations?|options?|alternatives?|format)\b|(?:i )?hope (?:this|that|it) helps[.!]*$|here you go[.!]*$|enjoy[.!]*$)/i;
   const OUTRO_RE = /^(?:let me know|want me to|would you like|if you(?:'d|’d| would| want| need)|i can also|i could also|happy to|shall i|do you want|feel free|hope (?:this|that|you)|need (?:any|more|another)|should i|tell me|any (?:changes|tweaks|edits)|want (?:a|another|more|it|me)|can i|would it help|or (?:would|do|should) you|which (?:one|version|option)|just say|ready (?:for|when)|enjoy|what would you like|what do you want|how can i help|anything else)\b/i;
   // A reaction to the story, not the story: "This is so wild.", "Some people never learn."
   const REACTION_RE = /^(?:this is|this was|that'?s|that is|wow|omg|oh my|so\b|what a|can you believe|unbelievable|insane|crazy|wild|honestly|imagine|lol|haha|yikes|ugh|amazing|incredible|some people|people are|i can'?t|i love|i hate|no way|you won'?t believe)\b/i;
@@ -95,6 +116,14 @@
     "search", "sign in", "log in", "sign up", "subscribe", "advertisement", "share this article",
     "read more", "click here", "skip to content", "back", "next", "previous", "close", "open", "save",
     "download", "print", "follow", "followers", "following", "view all", "load more"]);
+  // "BREAKING:", "WATCH:" open news headlines; "Police:" attributes one.
+  const KICKER_RE = /^(?:breaking(?: news)?|update[ds]?|watch|exclusive|opinion|analysis|report|live|video|photos?|just in|developing|new|review|explainer|editorial|poll|quiz|interview|podcast|alert|urgent|official|confirmed|revealed|warning|study|survey|op-ed|fact check|explained|recap|preview|listen|look|viral|trending|heartwarming|good news)$/i;
+  const PREFIX_RE = /^([\p{L}\p{M}][\p{L}\p{M}'’ -]{0,24}?)\s?[:：]\s*\S/u;
+  // A critique of a headline, not a headline: "Strong hook, but…", "8/10",
+  // "Consider a stronger verb", "I'd cut the last line".
+  const CRIT_RE = /(?:\b(?:consider (?:cutting|changing|adding|removing|using|making|swapping|a (?:shorter|stronger|more|different))|try (?:cutting|adding|changing|removing|making it|swapping|a (?:shorter|stronger|more|different))|i'?d (?:cut|change|swap|tighten|trim|drop|move|rewrite|add|remove|keep|go with|lead with)|is (?:overused|too long|too short|a bit long|a little long|clich[eé]d?)|too (?:long|wordy|short) by|(?:strong|good|great|solid|nice|weak) (?:hook|overall|opening|start)|works (?:well|great|fine)|repeats the headline|could be (?:shorter|tighter|stronger|punchier)|reads (?:well|better))\b)/i;
+  const CRIT_NUM_RE = /\b\d+\s*(?:characters|chars)\b|(?:^|\s)\d+(?:\.\d)?\s*\/\s*10\b/i;
+  const critique = (s, numbers) => CRIT_RE.test(flat(s)) || (!!numbers && CRIT_NUM_RE.test(flat(s)));
   const NOISE_RE = /^(?:thought for \d+|searched \d+|analy[sz]ed|reasoned for|\d+\s*\/\s*\d+$|claude can make mistakes|chatgpt can make mistakes|message (?:claude|chatgpt))/i;
 
   // Past-tense news verbs and named things: small evidence that a line is news.
@@ -129,9 +158,10 @@
   const round2 = (x) => Math.round(x * 100) / 100;
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
+  // Hashtags you typed or asked for: anything after a # counts, #2024 too.
   function hashtags(text) {
     const out = [], seen = new Set();
-    (String(text || "").match(TAG_RE) || []).forEach(t => {
+    (String(text || "").match(TAG_LOOSE) || []).forEach(t => {
       const k = t.toLowerCase();
       if (!seen.has(k)) { seen.add(k); out.push(t); }
     });
@@ -190,7 +220,7 @@
   /* ---------- stage 1: collect ---------- */
 
   function labelKey(name) {
-    return String(name || "").toLowerCase().replace(/[’']/g, "'").replace(/[^\p{L}\p{N}+&' -]/gu, " ")
+    return String(name || "").normalize("NFC").toLowerCase().replace(/[’']/g, "'").replace(/[^\p{L}\p{M}\p{N}+&' -]/gu, " ")
       .replace(/\s*[+&]\s*/g, " and ").replace(/\s+/g, " ").trim();
   }
 
@@ -208,7 +238,7 @@
   function parseLabel(display) {
     const lead = display.replace(/^[^\p{L}]+/u, "");
     if (!lead) return null;
-    let m = lead.match(/^([\p{L}][\p{L}\p{N} '’&+\/#-]{0,34}?)\s*(?:\(([^)]{0,48})\)|\[([^\]]{0,48})\])?\s*[:：]\s*([\s\S]*)$/u);
+    let m = lead.match(/^([\p{L}][\p{L}\p{M}\p{N} '’&+\/#-]{0,34}?)\s*(?:\(([^)]{0,48})\)|\[([^\]]{0,48})\])?\s*[:：]\s*([\s\S]*)$/u);
     if (m) {
       const hit = lookupLabel(m[1]);
       if (hit) return Object.assign(hit, { rest: m[4].trim(), standalone: !m[4].trim(), note: (m[2] || m[3] || "").trim() });
@@ -231,13 +261,18 @@
   // line of its own, never "Take a moment…" or "Version 2 of the app is out".
   const OPTION_RE = /^(?:option|version|variation|variant)\s*#?\s*(\d{1,2}|[a-e])(?![\p{L}\p{N}])(\s*[:.)\-–—]\s*)?(.*)$/iu;
   function optionMark(t, L) {
-    if (L.bullet || L.label || lenOf(t) > 80) return null;
-    const m = t.replace(/^[^\p{L}]+/u, "").match(OPTION_RE);
+    if (L.label || lenOf(t) > 120) return null;
+    const s = t.replace(/^\s*(?:[-*•·+]|\d{1,2}[.)])\s+/, "").replace(/^[^\p{L}]+/u, "");
+    const m = s.match(OPTION_RE);
     if (!m) return null;
     const rest = m[3].trim();
-    const ok = !rest || /^[(\[]/.test(rest) || /^(?:rated|score)\b/i.test(rest)
-      || (!!m[2] && lenOf(rest) <= 60 && sentenceCount(rest) <= 1 && !/\.\s*$/.test(rest));
-    return ok ? { n: m[1].toUpperCase(), note: rest } : null;
+    const plain = !rest || /^[(\[]/.test(rest) || /^(?:rated|score)\b/i.test(rest);
+    const n = m[1].toUpperCase();
+    if (!L.bullet && lenOf(t) <= 80 && (plain || (!!m[2] && lenOf(rest) <= 60 && sentenceCount(rest) <= 1 && !/\.\s*$/.test(rest)))) return { n, note: rest };
+    // "- Option 1:", "Option 1 - Emotional angle.", "Option 1 Emotional": a
+    // header only if every option turns out to have its own labels.
+    if (plain || !!m[2] || (lenOf(rest) <= 40 && sentenceCount(rest) <= 1)) return { n, note: rest, loose: true };
+    return null;
   }
 
   function makeLine(raw, hint) {
@@ -256,8 +291,12 @@
     if (L.blank) return L;
     // Table cells ("Title | Author | Description") are never labels.
     L.label = L.cell ? null : parseLabel(t);
+    // "CREDIT: FIREFIGHTERS SAVE KITTEN AGAIN" is a headline, not a credit line.
+    if (L.label && L.label.field === "drop" && (!L.label.soft || L.label.meta) && L.label.rest && wordsOf(L.label.rest).length >= 3
+      && caseShape(L.label.rest).caps >= 0.6) L.label = null;
     const om = optionMark(t, L);
-    if (om) L.option = om;
+    if (om && om.loose) L.optionLoose = om;
+    else if (om) L.option = om;
     L.tagOnly = tagOnly(t);
     const low = t.toLowerCase();
     L.noise = NOISE.has(low.replace(/[.:!]+$/, "")) || NOISE_RE.test(t) || (h.ui === true);
@@ -312,15 +351,15 @@
 
   function splitOptionLines(lines) {
     const marks = [];
-    lines.forEach((l, i) => { if (l.option) marks.push(i); });
+    lines.forEach((l, i) => { if (l.option || l.optionLoose) marks.push(i); });
     if (marks.length < 2) return null;
     return marks.map((at, k) => {
       const end = k + 1 < marks.length ? marks[k + 1] : lines.length;
       const body = lines.slice(at + 1, end);
       while (body.length && (body[body.length - 1].blank || body[body.length - 1].sep)) body.pop();
-      const o = lines[at].option;
+      const o = lines[at].option || lines[at].optionLoose;
       const rated = (o.note.match(/(?:rated|score)?[\s:(]*([\d.]+\s*\/\s*\d+)/i) || [])[1] || "";
-      return { label: "Option " + o.n, n: o.n, rating: rated.replace(/\s+/g, ""), note: o.note, lines: body };
+      return { label: "Option " + o.n, n: o.n, rating: rated.replace(/\s+/g, ""), note: o.note, lines: body, loose: !!o.loose };
     });
   }
 
@@ -330,16 +369,21 @@
   // own line drops what follows, up to the next label.
   function labelSections(lines) {
     const sections = [], pre = [];
-    let cur = null;
+    let cur = null, prevBlank = true, dropPara = false;
     for (const l of lines) {
+      const startsPara = prevBlank;
+      prevBlank = !!l.blank;
+      if (dropPara) { if (!l.blank && !l.label) continue; dropPara = false; }
       if (l.label) {
         const lab = l.label;
         const inCaption = cur && (cur.field === "caption" || cur.field === "capx");
-        if (inCaption && ((lab.field === "drop" && lab.soft) || (lab.field === "caption" && lab.weak && !cur.weak))) {
+        const asText = lab.field === "drop" && lab.soft && (!lab.meta || (!startsPara && !lab.standalone));
+        if (inCaption && (asText || (lab.field === "caption" && lab.weak && !cur.weak))) {
           cur.lines.push(Object.assign({}, l, { label: null }));
           continue;
         }
-        if (lab.field === "drop" && !lab.standalone) continue;
+        // "Note: I kept it short." starting a paragraph: that paragraph goes.
+        if (lab.field === "drop" && !lab.standalone) { if (startsPara && lab.meta) dropPara = true; continue; }
         cur = { field: lab.field, name: lab.name, weak: !!lab.weak, idx: lab.idx, note: lab.note, lines: [], at: l.i };
         if (lab.rest) cur.lines.push(makeLine(lab.rest, { heading: l.heading, bold: l.bold }));
         sections.push(cur);
@@ -439,22 +483,32 @@
   // of the last line move to the tags.
   function finishCaption(paras, tags, warnings, mode) {
     const out = [];
+    // Paragraphs before the post's own hashtags are the post's, whatever
+    // they say; after them, it's the assistant again.
+    let boundary = 0;
     paras.forEach(p => {
       const keep = [];
+      let tagged = false;
       p.forEach(l => {
-        if (l.tagOnly) { tags.push(...(l.text.match(TAG_LOOSE) || [])); return; }
+        if (l.tagOnly) { tags.push(...(l.text.match(TAG_LOOSE) || [])); tagged = true; return; }
         if (l.meta || l.noise || l.sep) return;
         if (l.label && l.label.standalone) return;
         keep.push(l);
       });
       if (keep.length) out.push(keep);
+      if (tagged || (keep.length && cutTrailingTags(keep[keep.length - 1].text).tags.length)) boundary = out.length;
     });
     let dropped = 0;
-    const drop = (p) => { dropped++; p.forEach(l => tags.push(...(l.text.match(TAG_RE) || []))); };
-    if (mode !== "keep") {
-      const offer = (l) => OFFER_RE.test(l.text.replace(/^[^\p{L}]+/u, ""));
-      const tail = mode === "nohead" ? (l) => offer(l) || l.chatter === "outro" : offer;
-      while (out.length > 1 && out[out.length - 1].every(tail)) drop(out.pop());
+    const drop = (p) => { dropped++; p.forEach(l => { const c = cutTrailingTags(l.text); tags.push(...(c.text.match(TAG_RE) || []), ...c.tags); }); };
+    const bare = (l) => l.text.replace(/^[^\p{L}]+/u, "").replace(/[\s\p{Extended_Pictographic}\u200d\ufe0f]+$/u, "");
+    const assist = (l) => ASSIST_RE.test(bare(l));
+    const offer = (l) => assist(l) || OFFER_RE.test(bare(l));
+    if (mode === "keep") {
+      while (out.length > 1 && out[out.length - 1].every(assist)) drop(out.pop());
+    } else {
+      const tail = (k) => mode === "nohead" ? (l) => offer(l) || l.chatter === "outro"
+        : boundary > 0 && k >= boundary ? offer : assist;
+      while (out.length > 1 && out[out.length - 1].every(tail(out.length - 1))) drop(out.pop());
       if (mode === "nohead") while (out.length && out[0].every(l => l.chatter === "intro")) drop(out.shift());
     }
     if (out.length) {
@@ -562,11 +616,19 @@
     // Headline: the first labelled one you didn't reject. Others are offered.
     const heads = pick("headline");
     const headTexts = [];
-    let tail = [];
+    let tail = [], headOptions = false;
     heads.forEach(s => {
       const ps = paragraphs(s.lines).filter(p => p.some(l => !l.noise && !l.meta));
       if (!ps.length) return;
       let first = ps[0].filter(l => !l.meta && !l.noise);
+      // "Headline options:" with "Option 1: …" lines: each is a choice.
+      const opts1 = first.filter(l => (l.option || l.optionLoose) && (l.option || l.optionLoose).note);
+      if (opts1.length >= 2 && opts1.length === first.length) {
+        opts1.forEach(l => headTexts.push((l.option || l.optionLoose).note));
+        headOptions = true;
+        if (headTexts.length === opts1.length) tail = tail.concat(ps.slice(1));
+        return;
+      }
       // "Headline: X" and then the story with no Caption label: the story
       // goes on from the first line that reads as body text.
       let bodyAt = first.findIndex((l, k) => k > 0 && (lenOf(l.text) > 150 || sentenceCount(l.text) >= 2));
@@ -575,7 +637,8 @@
       if (headTexts.length === 1) tail = tail.concat(ps.slice(1));
     });
     pick("alt").forEach(s => s.lines.forEach(l => {
-      if (l.text && !l.label) headTexts.push(l.text.replace(/^\s*(?:[-*•·+]|\d{1,2}[.)])\s+/, ""));
+      const o = l.option || l.optionLoose;
+      if (l.text && !l.label) headTexts.push(o && o.note ? o.note : l.text.replace(/^\s*(?:[-*•·+]|\d{1,2}[.)])\s+/, ""));
     }));
     const usable = headTexts.filter(t => t && !avoided(t, opts));
     if (usable.length) {
@@ -585,7 +648,7 @@
       r.reasons.push(heads.length ? "labelled “" + (heads[0].name || "headline") + "”" : "listed as a headline option");
       if (usable.length > 1) {
         r.warnings.push(usable.length + " headlines offered — using the first, the others are below");
-        r.confidence.headline = Math.min(r.confidence.headline, 0.9);
+        r.confidence.headline = Math.min(r.confidence.headline, headOptions ? 0.6 : 0.9);
       }
       r.candidates = usable.map((t, i) => ({ text: t, score: 10 - i, confidence: i ? 0.5 : r.confidence.headline, why: [i ? "another labelled headline" : "labelled"] }));
     } else if (headTexts.length && opts.avoid && opts.avoid.length) {
@@ -617,11 +680,22 @@
       tags.push(...inlineTags(r.caption));
     }
 
+    // No headline label, but "Option 1: …", "Option 2: …" above the caption:
+    // headline choices. You pick one.
+    const preOpts = !r.headline ? pre.filter(l => (l.option || l.optionLoose) && (l.option || l.optionLoose).note && !avoided((l.option || l.optionLoose).note, opts)) : [];
+    if (preOpts.length >= 2) {
+      const texts = preOpts.map(l => (l.option || l.optionLoose).note);
+      r.headline = texts[0];
+      r.confidence.headline = 0.6;
+      r.reasons.push("the first of " + texts.length + " headline options");
+      r.warnings.push(texts.length + " headline options above the caption — pick one");
+      r.candidates = texts.map((t, i) => ({ text: t, score: 10 - i, confidence: i ? 0.5 : 0.6, why: ["headline option " + (i + 1)] }));
+    }
     // No headline label, but a headline-like line before the first label.
     if (!r.headline) {
-      const pps = paragraphs(pre).filter(p => p.some(l => !l.chatter && !l.noise && !l.meta && !l.tagOnly));
+      const pps = paragraphs(pre).filter(p => p.some(l => !l.chatter && !l.noise && !l.meta && !l.tagOnly && !l.option && !l.optionLoose));
       for (let k = pps.length - 1; k >= 0; k--) {
-        const ls = pps[k].filter(l => !l.chatter && !l.noise && !l.meta && !l.tagOnly);
+        const ls = pps[k].filter(l => !l.chatter && !l.noise && !l.meta && !l.tagOnly && !l.option && !l.optionLoose);
         const text = joinLines(ls);
         const sc = headlineScore(text, { alone: ls.length === 1, followedByBody: !!r.caption, heading: ls.some(l => l.heading), bold: ls.some(l => l.bold) });
         if (sc.s >= 4 && !avoided(text, opts)) {
@@ -662,9 +736,15 @@
   function contentParas(lines) {
     const out = [];
     let skip = false;
+    let prevBlank = true;
     for (const l of lines) {
       const lab = l.label;
-      const hardDrop = !!(lab && lab.field === "drop" && !lab.soft);
+      const startsPara = prevBlank;
+      prevBlank = !!l.blank;
+      // The assistant's notes ("Notes:", "Angle: …") starting a paragraph go,
+      // like a source list; "Tip:" and "Photo:" in a post stay.
+      const hardDrop = !!(lab && lab.field === "drop" && (!lab.soft || (lab.meta && startsPara)));
+      if (hardDrop && !lab.standalone && lab.soft) { skip = true; continue; }
       if (hardDrop && lab.standalone) { skip = true; continue; }
       if (skip && lab && !hardDrop) skip = false;
       if (skip && l.blank) { skip = false; out.push(makeLine("", null)); continue; }
@@ -750,12 +830,7 @@
       const base = sigmoid((best.score - 5) / 1.6);
       r.confidence.headline = base * (0.6 + 0.4 * Math.min(1, Math.max(0, margin) / 2.5));
       if (mode === "structure") r.confidence.headline = Math.min(0.92, r.confidence.headline + 0.05);
-      // "Titular: …", "PHOTO: …": a word and a colon it doesn't know may be a
-      // label in another language, so it asks rather than trusting it.
-      if (/^[\p{L}]{2,16}\s?:\s/u.test(best.text)) {
-        r.confidence.headline = Math.min(r.confidence.headline, 0.6);
-        r.warnings.push("The headline starts with \u201c" + best.text.split(":")[0] + ":\u201d \u2014 check it isn't a label");
-      }
+      doubtPrefix(r, best.text, lines);
       r.reasons = best.why.slice(0, 4);
       r.headlineFrom = best.heading ? "heading" : best.bold ? "bold" : "text";
       r.candidates = [best].concat(pool.filter(c => c !== best)).slice(0, 4).map(c => ({ text: c.text, score: round2(c.score),
@@ -794,6 +869,28 @@
     return validate(r, hasBody);
   }
 
+  // "Titular: …", "ចំណងជើង: …": an opening word and colon it doesn't know may
+  // be a label in another language, so it asks rather than trusting it. A
+  // news kicker ("BREAKING:") or an attribution ("Police:") is fine, unless
+  // another line opens the same way (a label pair) or the word isn't written
+  // in Latin letters.
+  function doubtPrefix(r, text, lines) {
+    const m = flat(text).match(PREFIX_RE);
+    if (!m) return;
+    const w = m[1].trim();
+    if (KICKER_RE.test(w) || w.split(/\s+/).length > 3) return;
+    const latin = /^[\p{Script=Latin}\p{M}'’ -]+$/u.test(w);
+    const own = norm(text);
+    const pair = (lines || []).some(l => {
+      if (!l.text || l.label || own.includes(norm(l.text))) return false;
+      const p = l.text.match(PREFIX_RE);
+      return !!p && !KICKER_RE.test(p[1].trim()) && p[1].trim().split(/\s+/).length <= 3;
+    });
+    if (latin && !pair) return;
+    r.confidence.headline = Math.min(r.confidence.headline, 0.6);
+    r.warnings.push("The headline starts with \u201c" + w + ":\u201d \u2014 check it isn't a label");
+  }
+
   // One short block and nothing else: that's the headline, as in 3.4
   // ("paste just the headline"). Two sentences or more, and it asks first.
   function strategySingle(lines, opts) {
@@ -801,12 +898,17 @@
     if (!content.length || content.some(l => l.label || l.tagOnly || l.option)) return null;
     const first = content[0].i, last = content[content.length - 1].i;
     if (lines.slice(first, last + 1).some(l => l.blank)) return null;
-    // Chat to you ("Sure, happy to help!", "Let me know if you want changes")
-    // isn't a headline; "Do you want to live to 100? …" can be.
+    // Chat to you ("Sure, happy to help!", "Here's your post:", "Let me know
+    // if you want changes") isn't a headline; "Yes, this is real: a cat…",
+    // "Here's why airlines…" and "Do you want to live to 100? …" can be.
     const chatty = (l) => {
       const b = l.text.replace(/^[^\p{L}]+/u, "");
-      return INTRO_RE.test(b) || ((OFFER_RE.test(b) || OUTRO_RE.test(b))
-        && /\b(?:help|post|caption|headline|version|draft|write|rewrite|create|tweak|changes?|edits?)\b/i.test(b));
+      // "Happy to help: teen fixes neighbor's car" — a headline after the opener.
+      if (/^[^:：]{1,40}[:：]\s*\S/.test(b) && wordsOf(b.replace(/^[^:：]*[:：]/, "")).length >= 4) return false;
+      if (ASSIST_RE.test(b)) return true;
+      if ((OFFER_RE.test(b) || OUTRO_RE.test(b)) && /\b(?:help|post|caption|headline|version|draft|write|rewrite|create|tweak|changes?|edits?)\b/i.test(b)) return true;
+      return INTRO_RE.test(b) && (/:\s*$/.test(b) || (lenOf(b) < 40 && /[!.]\s*$/.test(b)) || (/\?\s*$/.test(b) && /\byou(?:r)?\b/i.test(b))
+        || /^(?:here(?:'s|’s| is| are) (?:your|my)\b|i(?:'ve|’ve| have) (?:written|created|made|drafted))/i.test(b));
     };
     if (content.every(chatty)) return null;
     const text = joinLines(content);
@@ -817,6 +919,7 @@
     const r = baseResult("single");
     r.headline = text;
     r.confidence.headline = sentenceCount(text) <= 1 && content.length <= 3 ? 0.8 : 0.6;
+    doubtPrefix(r, text, lines);
     r.reasons = ["the only text given"];
     r.candidates = [{ text, score: 5, confidence: r.confidence.headline, why: ["the only text given"] }];
     return validate(r, false);
@@ -884,10 +987,14 @@
 
     // Numbered options, when there are two or more real ones and nothing
     // labelled sits above the first (otherwise the markers are just text).
+    // Options that each carry their own Headline or Caption label always
+    // count, whatever sits above them; looser headers ("- Option 1:", a
+    // long note) only count then.
     const opt = splitOptionLines(lines);
-    const firstMark = lines.findIndex(l => l.option);
+    const firstMark = lines.findIndex(l => l.option || l.optionLoose);
     const labelledAbove = firstMark > 0 && lines.slice(0, firstMark).some(l => l.label && FIELDS_SHOWN.includes(l.label.field));
-    if (opt && !labelledAbove) {
+    const ownLabels = !!opt && opt.every(o => o.lines.some(l => l.label && (l.label.field === "headline" || l.label.field === "caption")));
+    if (opt && (ownLabels || (!labelledAbove && !opt.some(o => o.loose)))) {
       const results = opt.map(o => ({ o, r: analyzeLines(o.lines, opts) })).filter(x => x.r.ok && (x.r.headline || x.r.caption));
       if (results.length > 1) {
         optionIndex = Math.min(Math.max(opts.optionIndex || 0, 0), results.length - 1);
@@ -958,26 +1065,36 @@
   // CAPS or Title Case: how news headlines are written. A bold first line in
   // sentence case is more often a tweet or LinkedIn draft. Scripts without
   // capitals (Khmer, Thai, Hindi…) can't show it, so they pass.
+  const PROMO_RE = /\b(?:we(?:'re|’re|'ve|’ve)?|our|i(?:'m|’m|'ve|’ve)?|my|excited|thrilled|proud to|announcing|personal news|join (?:us|me)|hiring|link in bio|check it out|(?:finally|now|is) live|launch(?:ed|ing)? (?:our|my)|shipped)\b/i;
+  const FIRST_PERSON_RE = /^(?:we|i|i'm|i’m|i've|i’ve|we're|we’re|we've|we’ve|our|my)\b/i;
+
   function newsy(h) {
     const cased = h.match(/[\p{Lu}\p{Ll}]/gu) || [];
-    if (!cased.length) return true;
+    if (cased.length < (h.match(/\p{L}/gu) || []).length * 0.5) return true;   // mostly Khmer, Thai…
     if ((h.match(/\p{Lu}/gu) || []).length / cased.length >= 0.6) return true;
     const words = h.split(/\s+/).filter(w => /^[\p{Lu}\p{Ll}]{4,}/u.test(w));
-    return words.length >= 3 && words.filter(w => /^\p{Lu}/u.test(w)).length / words.length >= 0.6;
+    if (words.length >= 3 && words.filter(w => /^\p{Lu}/u.test(w)).length / words.length >= 0.6) return true;
+    // Or news in its words: "TSA ends…", "Pilot fired after…", "BREAKING: …".
+    const pm = h.match(PREFIX_RE);
+    return (!!pm && KICKER_RE.test(pm[1].trim())) || wordsOf(h).some(w => TRIGGER_SET.has(w.toLowerCase()) || ENTITIES.has(w.toLowerCase()));
   }
 
   function isStory(r, mode) {
     if (!r || !r.headline || !r.caption) return false;
     if (/\t/.test(r.headline)) return false;                       // a table row
-    // A critique ("Strong overall. The number creates curiosity…") isn't a headline.
-    const sane = sentenceCount(r.headline) < 3 && lenOf(flat(r.headline)) <= 300;
+    // A critique ("Strong hook, but it's 112 characters. Try cutting…") isn't
+    // a story; a headline of three short sentences can be.
+    const sane = !critique(r.headline, true) && !critique(String(r.caption).slice(0, 400)) && lenOf(flat(r.headline)) <= 300;
     if (labelledPair(r) && sane) return true;
     if (mode === "labels") return false;
     if (mode === "loose") return r.confidence.overall >= 0.5;
     // Unasked, an unlabelled post needs a headline that looks like one: a
-    // heading, or a bold or first line written in CAPS or Title Case.
-    const shaped = r.strategy === "structure" ? r.headlineFrom !== "bold" || newsy(flat(r.headline))
-      : r.strategy === "layout" && newsy(flat(r.headline));
+    // heading, or a bold or first line written in CAPS or Title Case or with
+    // news in its words. A launch post or a "some personal news" draft, in
+    // the first person, isn't one.
+    const promo = PROMO_RE.test(flat(r.headline)) || FIRST_PERSON_RE.test(flat(r.caption).replace(/^[^\p{L}"“]+/u, ""));
+    const shaped = !promo && (r.strategy === "structure" ? r.headlineFrom !== "bold" || newsy(flat(r.headline))
+      : r.strategy === "layout" && newsy(flat(r.headline)));
     return shaped && sane && r.hashtags.length >= 2 && r.confidence.headline >= 0.75
       && r.confidence.caption >= 0.7 && !r.needsConfirm;
   }
@@ -1012,12 +1129,18 @@
       if ((isBlock && !(tag === "LI" && hasBlockKids)) || (tag === "DIV" && !hasBlockKids && (el.textContent || "").trim())) {
         // Text you can't see (a collapsed draft, display:none) isn't read.
         if (el.getClientRects && !el.getClientRects().length && getComputedStyle(el).display !== "contents") return;
+        if (el.closest && el.closest("details:not([open])") && !el.closest("summary")) return;
+        if (getComputedStyle(el).visibility === "hidden") return;
         let text;
-        if (el.querySelector(INNER_SKIP)) {
+        // A code block: just the code, not the language label above it.
+        const code = tag === "PRE" && el.querySelector("code");
+        if (code) text = code.innerText || code.textContent || "";
+        else if (el.querySelector(INNER_SKIP)) {
           // Leave out button labels inside the block ("Copy", "Edit").
           const c = el.cloneNode(true);
           c.querySelectorAll(INNER_SKIP).forEach(n => n.remove());
           c.querySelectorAll("br").forEach(n => n.replaceWith("\n"));
+          c.querySelectorAll("p,div,li,h1,h2,h3,h4,h5,h6,blockquote,pre,tr,dt,dd").forEach(n => n.after("\n"));
           text = c.textContent || "";
         } else text = el.innerText || el.textContent || "";
         text = text.replace(/\n{3,}/g, "\n\n").trim();

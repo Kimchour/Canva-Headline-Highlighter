@@ -28,3 +28,13 @@ test("confidence drops when much of the instruction isn't understood", () => {
   assert.ok(clear.confidence > fuzzy.confidence);
   assert.ok(fuzzy.unknown.includes("flibbertigibbet"));
 });
+
+test("what an instruction leaves alone", () => {
+  assert.deepStrictEqual(IN.parse("remove the hashtags from the caption").steps[0].fields, ["hashtags"]);
+  assert.deepStrictEqual(IN.parse("remove the hashtags, keep the caption").steps[0].fields, ["hashtags"]);
+  assert.deepStrictEqual(IN.parse("undo the fill and the line up").steps[0].what, ["fill", "lineup"]);
+  assert.deepStrictEqual(IN.parse("run it but don't fill the notes").steps[0].skip, ["notes"]);
+  assert.notStrictEqual(IN.parse("delete the caption's last line").steps[0] && IN.parse("delete the caption's last line").steps[0].op, "clearfield");
+  // "go ahead" on its own, with nothing to answer, is still a run.
+  assert.strictEqual(IN.parse("go ahead").steps[0].op, "run");
+});

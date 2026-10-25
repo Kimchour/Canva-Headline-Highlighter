@@ -52,6 +52,8 @@
 .hh-root button:focus-visible, .hh-root summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Inside scrolling or folding rows a ring outside the box gets cut off. */
 .hh-root .hh-switch:focus-visible, .hh-root .hh-sug:focus-visible, .hh-root .hh-tagx:focus-visible { outline-offset: -2px; }
+/* An inset accent ring vanishes on a switch that's on (its track is the accent). */
+.hh-root .hh-switch.on:focus-visible { outline-color: var(--text); }
 .hh-root textarea:focus-visible, .hh-root input:focus-visible { outline: none; }
 .hh-root svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .hh-root kbd {
@@ -490,7 +492,10 @@
 @container (max-width: 300px) {
   .hh-dock { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hh-kbd { display: none; }
+}
+@container (max-width: 332px) {
   .hh-acts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hh-acts.hh-acts3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hh-small .hh-segopt { padding: 4px 1px; font-size: 10.5px; letter-spacing: -.01em; }
 }
 
