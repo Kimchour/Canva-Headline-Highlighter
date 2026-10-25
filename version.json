@@ -1,7 +1,7 @@
 {
   "version": "4.0.0",
   "date": "2026-10-25",
-  "download": "https://raw.githubusercontent.com/Kimchour/Canva-Headline-Highlighter/main/canva-headline-highlighter.zip?v=4.0.0",
+  "download": "https://raw.githubusercontent.com/Kimchour/Canva-Headline-Highlighter/b1c40dcb88bf58b3db0a08c779f5f09b2cae435a/canva-headline-highlighter.zip",
   "required": false,
   "added": [
     "A new panel: Studio, Tools and Settings, and an Updates sheet with both versions and the release notes",
