@@ -81,6 +81,27 @@ const waitCard = (p, re) => p.waitForFunction((src) => [...document.documentElem
   await canva.waitForFunction(() => /PILOT DIVERTS/.test((document.querySelector(".hh-paste") || {}).value || ""), null, { timeout: 8000 }).catch(() => {});
   check("…and sends it to Canva", /PILOT DIVERTS/.test(await pasteBox(canva)), (await cards(chat)).join(" ").slice(0, 120));
 
+  console.log("Two Canva tabs");
+  const stored = async (label) => { const sw = ctx.serviceWorkers()[0]; const v = sw ? await sw.evaluate(async () => { const r = await chrome.storage.local.get("hh"); return (r.hh && r.hh.bundle || "").slice(0, 40); }) : "(no worker)"; if (process.env.DEBUG) console.log("   stored bundle " + label + ":", JSON.stringify(v)); };
+  await stored("before");
+  const other = await ctx.newPage();
+  other.on("pageerror", e => errors.push("canva 2: " + e));
+  await other.goto("https://www.canva.com/design/DAGother/edit");
+  await other.waitForSelector(".hh-root .hh-panel", { timeout: 10000 }).catch(() => {});
+  await canva.bringToFront();
+  await canva.waitForTimeout(400);
+  // The other tab switches to Tools (it saves its settings), then the first tab refreshes.
+  await stored("after opening tab 2");
+  await other.click(".hh-mode .hh-segopt:nth-of-type(2)");
+  await other.waitForTimeout(600);
+  await stored("after tab 2 saved");
+  await canva.reload();
+  await canva.waitForSelector(".hh-root .hh-panel", { timeout: 10000 }).catch(() => {});
+  await canva.waitForTimeout(800);
+  await canva.click(".hh-mode .hh-segopt:nth-of-type(1)").catch(() => {});      // the view is shared: back to Studio
+  await canva.waitForTimeout(300);
+  check("a story another tab never touched isn't wiped by it", /PILOT DIVERTS/.test(await pasteBox(canva)), JSON.stringify((await pasteBox(canva)).slice(0, 60)));
+
   console.log("The extension removed");
   await cdp.send("Extensions.uninstall", { id });
   await canva.waitForTimeout(2500);

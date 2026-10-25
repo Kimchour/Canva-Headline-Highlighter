@@ -1,19 +1,33 @@
 {
-  "version": "4.0.1",
+  "version": "4.0.2",
   "date": "2026-10-25",
-  "download": "https://raw.githubusercontent.com/Kimchour/Canva-Headline-Highlighter/3208c47ec0409e1e28cd6b7a3330a0621f6dbfdc/canva-headline-highlighter.zip",
+  "download": "https://raw.githubusercontent.com/Kimchour/Canva-Headline-Highlighter/main/canva-headline-highlighter.zip?v=4.0.2",
   "required": false,
   "added": [
-    "Claude and ChatGPT tabs that were open during an update keep working — no refresh needed",
-    "A tab that can't reach the Highlighter any more says so, with a Refresh button"
+    "A Canva tab waiting for its photo keeps waiting through an update, and runs once when the photo arrives",
+    "The photo wait costs nothing with Automation off, and a sharper copy of a template picture isn't taken for a new photo"
   ],
   "fixed": [
-    "Automation's photo wait: a picture the template already had no longer counts as the new photo",
-    "The assistant's notes (Note:, Why:, Image:) and closing offers stay out of Canva Notes",
-    "A review of your draft (“Clear and punchy. I'd keep it.”) is no longer sent as a story",
-    "Poll choices, kickers like “TRY THIS:” and one-word lines like “Python” stay in your post"
+    "After an update, an old copy no longer keeps acting behind the new panel (two runs, keys answered twice)",
+    "Reload the Highlighter no longer wipes the story out of your other Canva tabs",
+    "Assistant offers that mention comments or sharing stay out of Notes; a post's own notes and closing lines stay in",
+    "“Shorter:” or “Suggestion:” in front of a headline isn't written onto the design; reviews of your draft aren't sent as stories"
   ],
   "history": [
+    {
+      "version": "4.0.1",
+      "date": "2026-10-25",
+      "added": [
+        "Claude and ChatGPT tabs that were open during an update keep working — no refresh needed",
+        "A tab that can't reach the Highlighter any more says so, with a Refresh button"
+      ],
+      "fixed": [
+        "Automation's photo wait: a picture the template already had no longer counts as the new photo",
+        "The assistant's notes (Note:, Why:, Image:) and closing offers stay out of Canva Notes",
+        "A review of your draft (“Clear and punchy. I'd keep it.”) is no longer sent as a story",
+        "Poll choices, kickers like “TRY THIS:” and one-word lines like “Python” stay in your post"
+      ]
+    },
     {
       "version": "4.0.0",
       "date": "2026-10-25",

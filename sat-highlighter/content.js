@@ -132,11 +132,20 @@
     pos: { x: null, y: 96 }
   };
 
+  // The story is shared by every Canva tab. A tab that hasn't changed it since
+  // it loaded keeps whatever story is stored now (another tab may have just
+  // received one), instead of writing back its own older copy.
+  const STORY_KEYS = ["bundle", "text", "textFrom", "raw", "caption", "tags", "det", "optionIndex"];
+  const storyAtLoad = {};
+  const noteStory = () => STORY_KEYS.forEach(k => { storyAtLoad[k] = JSON.stringify(state[k]); });
+  // The story as it was last stored, by this tab or another.
+  const storedStory = {};
+  const noteStored = (hh) => { if (hh) STORY_KEYS.forEach(k => { if (k in hh) storedStory[k] = hh[k]; }); };
+  try { chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.hh && ch.hh.newValue) noteStored(ch.hh.newValue); }); } catch (e) {}
   const store = {
     save() {
       try {
-        chrome.storage.local.set({
-          hh: {
+        const hh = {
             palette: state.palette,
             active: state.active,
             censorMap: state.censorMap,
@@ -193,14 +202,19 @@
             collapsed: state.collapsed,
             size: state.size,
             pos: state.pos
-          }
-        });
+          };
+        if (STORY_KEYS.some(k => JSON.stringify(state[k]) !== storyAtLoad[k])) noteStory();
+        else STORY_KEYS.forEach(k => { if (k in storedStory) hh[k] = storedStory[k]; });
+        noteStored(hh);
+        chrome.storage.local.set({ hh });
       } catch (e) {}
     },
     load(cb) {
       try {
         chrome.storage.local.get("hh", (r) => {
           if (r && r.hh) Object.assign(state, r.hh);
+          noteStory();
+          noteStored(r && r.hh);
           // Older builds had one row of tabs, then Quick and Manual. Map the old
           // choice onto Studio, Tools and Settings.
           if (r && r.hh && !r.hh.view) {
@@ -4301,8 +4315,10 @@ weapon=w*apon`;
   // The big pictures shown on the design (not the panel's, Canva's side
   // panels or its buttons). With the headline's letters given, only those in
   // its column: a picture beside the design isn't its photo.
-  function designImages(hr) {
-    const side = [findColorPanel(), findNotesPanel(), findEditImagePanel(), findAdjustPanel()].filter(Boolean);
+  function designImages(hr, any) {
+    // Recording what a page already has (any), pictures in Canva's side panels
+    // may as well count too: finding those panels means reading the whole page.
+    const side = any ? [] : [findColorPanel(), findNotesPanel(), findEditImagePanel(), findAdjustPanel()].filter(Boolean);
     const vw = window.innerWidth, vh = window.innerHeight;
     return [...document.querySelectorAll("img, svg image")].filter(n => {
       if (mine(n) || !visible(n)) return false;
@@ -4310,7 +4326,9 @@ weapon=w*apon`;
       if (side.some(p => p.contains(n))) return false;
       const r = shownRect(n);
       if (r.width < 120 || r.height < 80) return false;
-      if (r.right <= 0 || r.bottom <= 0 || r.left >= vw || r.top >= vh) return false;
+      // Recording a page's own pictures, the ones scrolled out of view (the
+      // next page's photo) count too.
+      if (!any && (r.right <= 0 || r.bottom <= 0 || r.left >= vw || r.top >= vh)) return false;
       if (hr) {
         const ov = Math.min(r.right, hr.right) - Math.max(r.left, hr.left);
         if (ov < Math.min(r.width, hr.width) * 0.5) return false;
@@ -4571,6 +4589,8 @@ weapon=w*apon`;
 
   function build() {
     DOC.setAttribute("data-hh-panel", COPY);
+    // A copy from before 4.0.2 that was waiting with a story shows it only in its panel.
+    if (document.querySelector(".hh-root .hh-hold")) DOC.setAttribute("data-hh-hold", "1");
     document.querySelectorAll(".hh-root, .hh-layer, .hh-notice").forEach(n => n.remove());
     root = el("div", "hh-root hh-appear");
     root.setAttribute("dir", "ltr");
@@ -6221,7 +6241,8 @@ weapon=w*apon`;
       running = false;
       if (done && b.headline) {
         const pn = pageNumber();
-        const pp = pagePhoto();
+        const pp = runPhoto ? { src: runPhoto } : pagePhoto();
+        runPhoto = null;
         state.lastPost = { key: storyKey(state.text || b.headline), text: E._.flat(state.text || b.headline),
           page: pn ? pn.cur : null, photo: pp ? photoKey(pp.src) : null };
         // That photo is this page's now: it doesn't count as new for the next story.
@@ -7122,8 +7143,10 @@ weapon=w*apon`;
     updBusy = "reload";
     updMsg = null;
     render();
+    DOC.setAttribute("data-hh-reloading", "1");
     const r = await askBg({ type: "hh-reload", from: INSTALLED });
     if (!r || !r.ok) {
+      DOC.removeAttribute("data-hh-reloading");
       updBusy = "";
       updMsg = { why: contextGone() ? "reloaded" : "error" };
       render();
@@ -7621,7 +7644,12 @@ weapon=w*apon`;
   // The photo in the design, and where it comes from. Canva may add a fresh
   // signature (?…) to the same photo's address on each page, so compare the
   // address without it — otherwise a copied old photo could pass as new.
-  const photoKey = (src) => String(src || "").split(/[?#]/)[0];
+  // The same picture at another size is the same picture: Canva serves one as
+  // …/<id>/1/thumbnail.jpg, …/screen.jpg or …/screen_2x.jpg, or with its size
+  // in the address (…/width:800/…).
+  const photoKey = (src) => String(src || "").split(/[?#]/)[0]
+    .replace(/\/(?:thumbnail|thumbnail_large|screen|screen_2x|screen_3x|preview|original|full|large|medium|small)(?:[_-]\w+)?\.(?:jpe?g|png|webp|gif|avif)$/i, "/")
+    .replace(/\/(?:width|height|quality|format)[:=][^/]+/gi, "");
 
   const imgSrc = (n) => n.currentSrc || n.src || n.getAttribute("href") || n.getAttribute("xlink:href") || "";
   const photoOf = (n) => ({ n, src: imgSrc(n), loaded: n.tagName === "IMG" ? (n.complete && n.naturalWidth > 0) : true });
@@ -7632,6 +7660,7 @@ weapon=w*apon`;
   }
 
   let photoWatch = null;        // { key, since } while a new photo settles
+  let runPhoto = null;          // the new photo the run waited for
   let photoSkip = false;        // "Run without the photo" was pressed
 
   // The pictures a page already had when you opened it are the template's — a
@@ -7645,7 +7674,7 @@ weapon=w*apon`;
   function photoPageId() {
     // Finding the page counter means reading the whole page: not more than
     // every few seconds when it isn't there.
-    if (!(pageCounterEl && pageCounterEl.isConnected) && Date.now() - basePageAt < 4000) return basePage;
+    if (!(pageCounterEl && pageCounterEl.isConnected) && Date.now() - basePageAt < 30000) return basePage;
     basePageAt = Date.now();
     const pn = pageNumber();
     basePage = location.pathname + "|" + (pn ? pn.cur + "/" + pn.total : "");
@@ -7653,6 +7682,12 @@ weapon=w*apon`;
   }
   function photoBase() {
     const id = photoPageId();
+    // The pictures an older copy recorded for this page, handed on in an update.
+    const handed = DOC.getAttribute("data-hh-photobase");
+    if (handed) {
+      DOC.removeAttribute("data-hh-photobase");
+      try { const pb = JSON.parse(handed); if (pb && pb.id === id) photoBases.set(id, { keys: new Set(pb.keys || []), until: 0 }); } catch (e) {}
+    }
     let b = photoBases.get(id);
     if (!b) {
       // A page added or taken away moves the others: start their records over.
@@ -7661,9 +7696,16 @@ weapon=w*apon`;
       b = { keys: new Set(), until: Date.now() + 4000 };
       photoBases.set(id, b);
     }
-    if (Date.now() <= b.until) designImages(null).forEach(i => { const k = photoKey(imgSrc(i.n)); if (k && !/^blob:/i.test(k)) b.keys.add(k); });
+    if (Date.now() <= b.until) designImages(null, true).forEach(i => {
+      const k = photoKey(imgSrc(i.n));
+      if (!k) return;
+      if (/^blob:/i.test(k)) { uploaded.add(i.n); return; }
+      if (!uploaded.has(i.n)) b.keys.add(k);
+    });
     return b;
   }
+  // Pictures seen while still uploading (blob:): added by you, never the page's own.
+  const uploaded = new WeakSet();
 
   // Is a new photo in the design, fully loaded and steady for 2 seconds?
   // While uploading, Canva often swaps a quick preview for the final image,
@@ -7692,6 +7734,7 @@ weapon=w*apon`;
       return { ok: false, why: "photo", what: "checking" };
     }
     if (Date.now() - photoWatch.since < 2000) return { ok: false, why: "photo", what: "checking" };
+    runPhoto = key;
     return { ok: true };
   }
 
@@ -7811,18 +7854,29 @@ weapon=w*apon`;
   // nothing newer here, the panel says to refresh the tab.
   function retire() {
     if (retired) return;
+    // A story waiting (for its photo, a new page …) is handed on to the new
+    // copy, with the pictures this page had, so it carries on waiting.
+    if (autoHold && state.autoMode) {
+      DOC.setAttribute("data-hh-hold", "1");
+      const b = photoBases.get(basePage);
+      if (b) try { DOC.setAttribute("data-hh-photobase", JSON.stringify({ id: basePage, keys: [...b.keys] })); } catch (e) {}
+    }
     stopHold();
     retired = true;
     if (DOC.getAttribute("data-hh-panel") !== COPY) { [root, layer, noticeEl].forEach(n => n && n.remove()); return; }
     if (!root || !wrap) return;
     wrap.innerHTML = "";
     const box = el("div", "hh-stale");
-    box.appendChild(el("div", "hh-staletitle", "Refresh this tab"));
-    box.appendChild(el("div", "hh-staletext", "The Highlighter was updated or switched off, so the copy in this tab can't do anything now. Refresh the tab to carry on \u2014 your settings stay."));
-    const b = el("button", "hh-btn primary", "Refresh tab");
-    b.type = "button";
-    b.onclick = () => location.reload();
-    box.appendChild(b);
+    const updating = DOC.hasAttribute("data-hh-reloading");
+    box.appendChild(el("div", "hh-staletitle", updating ? "Updating the Highlighter\u2026" : "Refresh this tab"));
+    box.appendChild(el("div", "hh-staletext", updating ? "This tab refreshes by itself in a moment."
+      : "The Highlighter was updated or switched off, so the copy in this tab can't do anything now. Refresh the tab to carry on \u2014 your settings stay."));
+    if (!updating) {
+      const b = el("button", "hh-btn primary", "Refresh tab");
+      b.type = "button";
+      b.onclick = () => location.reload();
+      box.appendChild(b);
+    }
     wrap.appendChild(box);
     root.style.display = "";
   }
@@ -7845,14 +7899,34 @@ weapon=w*apon`;
     state.tokens = tokenize(state.text || "");
     build();
     startUpdates();
+    // The old copy was waiting with a story when the Highlighter updated.
+    let heldOver = false;
+    if (DOC.getAttribute("data-hh-hold") === "1") {
+      DOC.removeAttribute("data-hh-hold");
+      heldOver = true;
+    }
     // Note the pictures each page has when it comes into view, so the photo
-    // wait knows them from a new one.
+    // wait knows them from a new one. Only Automation waits for a photo.
     const notePage = () => {
       if (!current()) { retire(); return; }
-      if (!document.hidden && state.waitPhoto) photoBase();
+      if (!document.hidden && state.waitPhoto && state.autoMode) photoBase();
     };
     notePage();
     setInterval(notePage, 1500);
+    if (heldOver && state.autoMode && state.bundle.trim()) setTimeout(() => autoStart(), 600);
+    // ... or this tab was refreshed by an update while it waited.
+    try {
+      chrome.storage.local.get("hhResume", (r) => {
+        const x = r && r.hhResume;
+        if (!x || Date.now() - (x.at || 0) > 60000 || !Array.isArray(x.tabs)) return;
+        askBg({ type: "hh-hello" }).then((h) => {
+          if (!h || !x.tabs.includes(h.tabId)) return;
+          const rest = x.tabs.filter(id => id !== h.tabId);
+          try { if (rest.length) chrome.storage.local.set({ hhResume: { tabs: rest, at: x.at } }); else chrome.storage.local.remove("hhResume"); } catch (e) {}
+          if (state.autoMode && state.bundle.trim()) setTimeout(() => autoStart(), 600);
+        });
+      });
+    } catch (e) {}
     if (queuedStory) { receiveStory(queuedStory.text, queuedStory.source); queuedStory = null; }
     // A story sent while no Canva design was open waits here.
     try {

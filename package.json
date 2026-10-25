@@ -1,6 +1,6 @@
 {
   "name": "canva-headline-highlighter",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "private": true,
   "description": "Headline Highlighter for Canva: the Chrome extension, its tests and its build.",
   "scripts": {

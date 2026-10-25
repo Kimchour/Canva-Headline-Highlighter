@@ -180,7 +180,11 @@ async function doAfterReload() {
 async function refreshAfterReload(tabs) {
   const busy = [];
   for (const t of tabs) {
-    if (/^https:\/\/www\.canva\.com\/design\//i.test(t.url)) { chrome.tabs.reload(t.id).catch(() => {}); continue; }
+    if (/^https:\/\/www\.canva\.com\/design\//i.test(t.url)) {
+      if (await waitingWithStory(t.id)) await resumeAfterRefresh(t.id);
+      chrome.tabs.reload(t.id).catch(() => {});
+      continue;
+    }
     if (await chatBusy(t.id)) busy.push(t.id);
     else chrome.tabs.reload(t.id).catch(() => {});
   }
@@ -195,12 +199,41 @@ async function refreshAfterReload(tabs) {
   for (const id of busy) giveNewCopy({ id, url: "https://claude.ai/" });
 }
 
+// A Canva tab whose panel is waiting with a story (for its photo, a new page …)
+// picks the wait up again after it's refreshed.
+async function waitingWithStory(tabId) {
+  try {
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => !!document.querySelector(".hh-root .hh-hold") });
+    return !!(r && r.result);
+  } catch (e) { return false; }
+}
+async function resumeAfterRefresh(tabId) {
+  let cur = null;
+  try { cur = (await chrome.storage.local.get("hhResume")).hhResume; } catch (e) {}
+  const tabs = cur && Date.now() - (cur.at || 0) < 60000 && Array.isArray(cur.tabs) ? cur.tabs : [];
+  try { await chrome.storage.local.set({ hhResume: { tabs: tabs.concat(tabId), at: Date.now() } }); } catch (e) {}
+}
+
 // Tabs that were open when the Highlighter was installed or updated have no
 // copy, or an old one cut off from the extension ("Couldn't reach Canva"):
 // give them the new one, so nothing needs refreshing.
 async function giveNewCopy(t) {
   const canva = /^https:\/\/www\.canva\.com\/design\//i.test(t.url || "");
   try {
+    // A panel from before 4.0.1 can't step aside for a new copy and would keep
+    // acting behind it (a waiting run firing, keys answered twice): refresh
+    // that tab instead. The story it holds is kept.
+    if (canva) {
+      const [old] = await chrome.scripting.executeScript({ target: { tabId: t.id },
+        func: () => ({ old: !!document.querySelector(".hh-root") && !document.documentElement.hasAttribute("data-hh-panel"),
+          held: !!document.querySelector(".hh-root .hh-hold") }) });
+      if (old && old.result && old.result.old) {
+        // A story it was waiting with waits again once the tab is back.
+        if (old.result.held) await resumeAfterRefresh(t.id);
+        await chrome.tabs.reload(t.id);
+        return;
+      }
+    }
     if (canva) await chrome.scripting.insertCSS({ target: { tabId: t.id }, files: ["panel.css"] });
     await chrome.scripting.executeScript({ target: { tabId: t.id }, files: canva ? ["engine.js", "intent.js", "content.js"] : ["engine.js", "chat.js"] });
   } catch (e) {}

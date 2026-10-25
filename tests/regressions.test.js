@@ -249,10 +249,12 @@ test("the assistant's notes after a post never reach Notes", () => {
 test("closing offers go, the post's own calls to action stay", () => {
   const base = "Headline: Grandma, 92, graduates from college\n\nCaption: She left school in 1954 to care for her siblings. This spring she walked across the stage. 💙";
   for (const offer of ["Would you like a few alternative headlines too?", "Would you like a few hashtags to go with it?", "Do you want a version in Khmer too?",
-    "Hope this helps! 🙌", "Let me know what you think!", "Should I make it sound more urgent?", "Happy posting! 🚀"]) {
+    "Hope this helps! 🙌", "Should I make it sound more urgent?", "Happy posting! 🚀", "Want me to add a question at the end to get more comments?",
+    "I can tailor the caption for Instagram or LinkedIn if you'd like."]) {
     assert.ok(!E.analyze(base + "\n\n" + offer).caption.includes(offer.slice(0, 12)), offer);
   }
   for (const cta of ["I can't believe the changes she made in just ten months 😍", "Want me to share the full recipe? Comment \"BREAD\" below 👇",
+    "Should I do a part 2?", "Need more options for holiday treats? Check out our full list on the website.",
     "I can only imagine the headlines if this had gone wrong.", "Happy to say the source of the leak has since been fixed."]) {
     assert.ok(E.analyze(base + "\n\n" + cta + "\n\nHashtags: #goodnews").caption.endsWith(cta), cta);
   }
@@ -323,4 +325,60 @@ test("Python and SQL in a list stay; a code block's language label goes", () => 
 test("an interstate headline isn't first person", () => {
   const r = E.analyze("I-95 SHUT DOWN FOR HOURS AFTER 30-CAR PILEUP\n\nThe crash happened just after 6 a.m. on Tuesday, state police said. Drivers were stuck for hours.\n\n#traffic #news");
   assert.strictEqual(E.isStory(r, "strict"), true);
+});
+
+// Found in the review of 4.0.1.
+
+test("an offer to you stays out even when it mentions comments or sharing", () => {
+  const base = "Headline: Dog walks 20 miles home\n\nCaption: Cooper was rehomed in March. Three days later he was on their porch.";
+  for (const offer of ["Want me to add a question at the end to get more comments?", "Should I include a call to action that asks people to share this?",
+    "I can also add a line encouraging followers to tag a friend.", "Let me know if you want a version with a question at the end to boost comments!",
+    "I can tailor the caption for Instagram or LinkedIn if you'd like.", "I can whip up a punchier headline if you want."]) {
+    assert.strictEqual(E.analyze(base + "\n\n" + offer).caption, "Cooper was rehomed in March. Three days later he was on their porch.", offer);
+  }
+  // ... while the post's own call to action, after the offer-like opening, stays.
+  assert.ok(E.analyze(base + "\n\nWant me to share his full route? Comment ROUTE below 👇\n\n#dogs").caption.includes("Comment ROUTE"));
+});
+
+test("a post's own note stays; the assistant's goes by what it says", () => {
+  const own = E.analyze("**Headline:** Main Street bridge closes for repairs next week\n\n**Caption:** The bridge will be closed Monday to Friday while crews repair the deck.\n\nNote: Detours will be posted along Elm Street and 5th Avenue.\n\n#dayton #roadwork");
+  assert.ok(own.caption.includes("Detours will be posted"), own.caption);
+  const hours = E.analyze("**Headline:** Shelter waives adoption fees this weekend\n\n**Caption:** More than 80 dogs and cats need homes.\n\nNote: The shelter is open Saturday and Sunday from 9 a.m. to 5 p.m.\n\n**Hashtags:** #adoptdontshop");
+  assert.ok(hours.caption.includes("open Saturday"), hours.caption);
+  const theirs = E.analyze("**Headline:** Shelter waives adoption fees\n\n**Caption:** More than 80 dogs and cats need homes.\n\nNote: I couldn't verify the shelter's hours, so double-check them before posting.");
+  assert.ok(!theirs.caption.includes("verify"), theirs.caption);
+});
+
+test("chat lead-ins go in front of any headline; a CAPS NOTE: headline stays", () => {
+  for (const say of ["Shorter: DOG WALKS 20 MILES HOME TO THE FAMILY THAT GAVE HIM AWAY", "Punchier: Dog Walks 20 Miles Home To The Family That Gave Him Away",
+    "Suggestion: Dog Walks 20 Miles Home To The Family That Gave Him Away", "My pick: “Dog Walks 20 Miles Home To The Family That Gave Him Away”"]) {
+    assert.ok(/^(?:DOG|Dog) Walks|^DOG WALKS/.test(E.analyze(say).headline), say);
+  }
+  const r = E.analyze("NOTE: ALL DAYTON SCHOOLS CLOSED TOMORROW\n\nICE STORM WARNING IN EFFECT UNTIL NOON\n\nThe district made the call at 8pm after crews reported black ice. Buses will not run.\n\n#dayton #snowday");
+  assert.ok(/NOTE: ALL DAYTON SCHOOLS CLOSED TOMORROW/.test(r.headline + "\n" + r.caption), r.headline);
+  assert.strictEqual(E.analyze("Nice! This grandma, 92, just finished her degree\n\nShe left school in 1954 to care for her siblings. This spring she walked across the stage.\n\n#goodnews").headline, "Nice! This grandma, 92, just finished her degree");
+});
+
+test("说明 after an unlabelled story is the assistant's note, not the caption", () => {
+  const r = E.analyze("标题：北京迎来今年第一场雪\n\n今天早上，北京城区普降小雪。市民纷纷出门拍照留念。\n\n#北京 #下雪\n\n说明：根据新华社报道整理，发布前请核实。");
+  assert.ok(r.caption.startsWith("今天早上") && !r.caption.includes("核实"), r.caption);
+});
+
+test("a review with the critique in its caption isn't a story; news with everyday words is", () => {
+  const mk = (h, c) => E.analyze("**Headline:** " + h + "\n\n**Caption:** " + c + "\n\n**Hashtags:** #news");
+  assert.strictEqual(E.isStory(mk("Strong — the number grabs attention and the twist is clear.", "Good overall, but consider cutting the second sentence; it repeats the headline."), "labels"), false);
+  for (const [h, c] of [["ER wait times are too long, patients say", "One mother waited nine hours. The hospital says it will aim for under four hours by spring."],
+    ["This Winter Could Be Colder Than Usual, Forecasters Warn", "Aim for a full tank of gas and a stocked pantry before December."],
+    ["Mayor vows to put the kids first in new budget", "The plan adds 60 teachers. She said a similar plan works well in Denver."]]) {
+    assert.strictEqual(E.isStory(mk(h, c), "labels"), true, h);
+  }
+});
+
+test("headline options listed after a post go; a poll's choices stay whole", () => {
+  const alts = E.analyze("PILOT LANDS PLANE ALONE AFTER CO-PILOT FAINTS\n\nForty minutes out of Denver, the co-pilot slumped over. The captain landed the 737 alone.\n\nShorter headline ideas:\nOption 1: Pilot lands 737 alone after co-pilot faints\nOption 2: Pilot Lands Alone\n\n#aviation");
+  assert.strictEqual(alts.caption, "Forty minutes out of Denver, the co-pilot slumped over. The captain landed the 737 alone.");
+  const poll = E.analyze("WOULD YOU TAKE $1 MILLION TODAY OR A PENNY THAT DOUBLES EVERY DAY FOR 30 DAYS?\n\nA math teacher in Ohio asked her class this question last week. Most got it wrong.\n\nOption A: take the $1 million today\nOption B: a penny that doubles every day\n\nComment A or B below 👇\n\n#money");
+  assert.ok(poll.caption.includes("Option A: take the $1 million today\nOption B: a penny that doubles every day"), poll.caption);
+  const newer = E.analyze("Here's your post:\n\n**Headline:** Dog walks 20 miles home\n\n**Caption:** Cooper was rehomed in March. Three days later he was on their porch.\n\n**Hashtags:** #dogs\n\nIf you want something punchier, here are two new options:\n\n**Option 1**\n**Headline:** Rehomed dog finds his way back\n**Caption:** Cooper's owners lived 20 miles away.\n\n**Option 2**\n**Headline:** Loyal dog refuses to stay rehomed\n**Caption:** Three days, 20 miles.");
+  assert.strictEqual(newer.headline, "Dog walks 20 miles home");
 });

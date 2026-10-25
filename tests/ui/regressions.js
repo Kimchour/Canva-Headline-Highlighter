@@ -462,6 +462,40 @@ async function runDone(page) {
     check("the story runs on the photo that's already there", (await pastes(page)) > 0);
   });
 
+  await scenario("Automation: the same picture at another size isn't a new photo", autoSeed(), null, async (page) => {
+    const at = (name) => page.evaluate((name) => {
+      const c = document.createElement("canvas"); c.width = 480; c.height = 360; c.getContext("2d").fillRect(0, 0, 480, 360);
+      let im = document.getElementById("tpl");
+      if (!im) { im = new Image(); im.id = "tpl"; im.style.cssText = "position:absolute;left:0;top:0;width:480px;height:360px;z-index:1"; document.getElementById("stage").appendChild(im); }
+      // A Canva-style address: the picture's folder, then the size it's drawn at.
+      im.src = location.origin + "/media/M123/1/" + name + "?sig=" + Math.random();
+    }, name);
+    await page.route("**/media/**", r => r.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360"><rect width="480" height="360"/></svg>' }));
+    await at("thumbnail.png");
+    await page.waitForTimeout(4500);
+    await story(page);
+    await page.waitForTimeout(2500);
+    await at("screen_2x.png");
+    await page.waitForTimeout(5000);
+    check("the template's picture drawn sharper doesn't start the run", (await pastes(page)) === 0);
+  });
+
+  await scenario("Automation: a story waiting for its photo when a new copy takes over", autoSeed(), null, async (page) => {
+    await picture(page, "#777", { id: "tpl", z: 1 });
+    await page.waitForTimeout(4500);
+    await story(page);
+    await page.waitForTimeout(2000);
+    // The new copy arrives (as after an update); in Chrome it runs in a fresh world.
+    await page.evaluate(() => { delete window.__hhLoaded; });
+    for (const f of ["engine.js", "intent.js", "content.js"]) await page.addScriptTag({ content: read(f) });
+    await page.waitForTimeout(2500);
+    check("it still waits for the photo", /Waiting for the photo/.test(await text(page, ".hh-root") || "") && (await page.locator(".hh-root").count()) === 1);
+    await picture(page, "#3a7", { id: "new" });
+    await page.waitForTimeout(6000);
+    await runDone(page);
+    check("…and runs once when the photo arrives", (await pastes(page)) === 2, String(await pastes(page)));
+  });
+
   // After an update the copy already in a tab is cut off from the extension.
   await scenario("Canva: an old copy after an update", seed(), null, async (page) => {
     await page.evaluate(() => { window.__savedId = chrome.runtime.id; chrome.runtime.id = undefined; });

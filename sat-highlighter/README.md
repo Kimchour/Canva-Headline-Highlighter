@@ -256,8 +256,10 @@ It's careful about these things:
 - **It waits for the photo.** With **Wait for the photo** on (Settings -> Canva, on by
   default), the run starts only once a new photo is in the design - sent from PromptSnap
   or added yourself. A blank template waits. A picture the page already had when you opened
-  it - a template's sample photo, a background - doesn't count, wherever it sits. A copied
-  page still showing the last post's photo waits for the new one. A photo that's still uploading waits until it has fully
+  it - a template's sample photo, a background, the next page's photo - doesn't count,
+  and neither does the same picture redrawn at another size. A copied page still showing the
+  last post's photo waits for the new one. A story waiting for its photo keeps waiting
+  through an update of the Highlighter. A photo that's still uploading waits until it has fully
   loaded and stayed the same for 2 seconds. **Run now** starts without the photo; **Stop
   waiting** cancels.
 - **It never resends old stories.** Only a labelled story it watched being written is sent

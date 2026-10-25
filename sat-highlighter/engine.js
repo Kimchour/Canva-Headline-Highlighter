@@ -92,7 +92,7 @@
   // Chat before a post: "Sure! Here's your post:", "Absolutely, here are three options".
   // Openers like "Yes, you read that right." also match, so this only ever
   // decides unlabelled text, never a labelled caption.
-  const INTRO_RE = /^(?:(?:sure(?: thing)?|okay|ok|absolutely|of course|certainly|alright|all right|got it|perfect|no problem|definitely|yes|yep|awesome|great(?: question| idea| choice)?|happy to help|done|love (?:it|this|that)|sounds good|you got it|will do)(?:\s*[!,.:;—–]|\s+(?:here|this|i|i'm|i’m|i've|i’ve|let)\b)|(?:nice|cool|totally)(?:\s*!|\s*[,—–-]?\s+(?:here|this|i|i'm|i’m|let)\b)|here(?:'s|’s| is| are)(?: (?:your|a|an|the|my|some|two|three|four|five|\d+))?(?: [\w’'-]+){0,3}? (?:post|posts|draft|drafts|caption|captions|version|versions|headline|headlines|story|stories|rewrite|take|option|options|idea|ideas|copy|text)\b|here you go|here it is|below (?:is|are)|i(?:'ve|’ve| have) (?:written|created|made|drafted|put together|prepared|come up with|rewritten)|i (?:wrote|made|created|drafted|rewrote)|this (?:is|was) (?:a|an|the|your|my) (?:post|caption|version|draft|headline|rewrite|take|shorter|longer|punchier)|this (?:post|version|draft)\b|let me\b|happy to\b|as requested|thanks for\b|thank you for\b|good (?:call|catch))/i;
+  const INTRO_RE = /^(?:(?:sure(?: thing)?|okay|ok|absolutely|of course|certainly|alright|all right|got it|perfect|no problem|definitely|yes|yep|awesome|great(?: question| idea| choice)?|happy to help|done|love (?:it|this|that)|sounds good|you got it|will do)(?:\s*[!,.:;—–]|\s+(?:here|this|i|i'm|i’m|i've|i’ve|let)\b)|(?:nice|cool|totally)(?:\s*!\s*(?:$|here|i\b|i'm|i’m|let|this (?:is|one|version|post|caption|headline)\b)|\s*[,—–-]?\s+here(?:'s|’s| is| are| you go)\b)|here(?:'s|’s| is| are)(?: (?:your|a|an|the|my|some|two|three|four|five|\d+))?(?: [\w’'-]+){0,3}? (?:post|posts|draft|drafts|caption|captions|version|versions|headline|headlines|story|stories|rewrite|take|option|options|idea|ideas|copy|text)\b|here you go|here it is|below (?:is|are)|i(?:'ve|’ve| have) (?:written|created|made|drafted|put together|prepared|come up with|rewritten)|i (?:wrote|made|created|drafted|rewrote)|this (?:is|was) (?:a|an|the|your|my) (?:post|caption|version|draft|headline|rewrite|take|shorter|longer|punchier)|this (?:post|version|draft)\b|let me\b|happy to\b|as requested|thanks for\b|thank you for\b|good (?:call|catch))/i;
   // The assistant's own follow-up offers, the only chat trimmed off the end of
   // a caption (the same short list 3.4 used, plus a few close cousins).
   const OFFER_RE = /^(?:let me know|want me to|would you like|if you(?:'d|’d| would) like|i can also|happy to|shall i|do you want|i hope this helps|hope this helps|feel free to (?:tweak|adjust|edit|change|modify|use)|(?:want|need) (?:a|an|another) (?:shorter|longer|different|new|punchier|alternative)?\s*(?:version|one|take|caption|headline|draft)|i can (?:make|write|create|adjust|shorten|tweak|turn|rewrite)|should i (?:make|write|create|adjust|shorten|rewrite))\b/i;
@@ -103,9 +103,19 @@
   // Asked of you, not of the readers: "Want me to…", "Would you like me to…",
   // "If you'd like, I can…", "Shall I…". Or an offer that names the writing
   // ("Should I make it shorter?", "Need another version?").
-  const ASSIST_RE = /^(?:(?:do you (?:want|need) |would you like |want |need )me to\b|if you(?:'d|’d| would)? (?:like|want),? i (?:can|could)\b|i can also (?:make|write|create|add|turn|translate|give|do|adjust|shorten|draft|suggest|include)\b|i could also\b|let me know if you(?:'d|’d| would)? (?:like|want|need) (?:me to|a|an|another|any|it)\b|shall i\b|(?:should i|i can(?: also| easily| quickly)?(?= (?:make|write|create|add|adjust|shorten|lengthen|tweak|turn|rewrite|rephrase|give|do|change|draft|suggest|swap|try|put|include|provide|tighten|translate|help|come up))|happy to(?= (?:make|write|create|adjust|tweak|help|change|rewrite|draft|give|do|add|shorten|translate|try))|feel free to(?= (?:tweak|adjust|edit|change|modify|use|swap|rewrite|shorten|ask)))\b[^\n]{0,60}?\b(?:versions?|captions?|headlines?|drafts?|shorter|longer|punchier|catchier|simpler|tone|emojis?|hashtags|changes|tweak|edit|adjust\w*|rewrite|rephrase|shorten|lengthen|tighten|variations?|alternatives?|call to action|cta|source|image|prompt|title|translation)\b|(?:do you want|want|need|would you like) (?:a|an|another|some|more|any|a few|a couple of)(?: [\w-]+){0,2} (?:versions?|captions?|headlines?|hashtags?|drafts?|takes?|options?|ones?|variations?|alternatives?)\b)/i;
+  const ASSIST_RE = /^(?:(?:do you (?:want|need) |would you like |want |need )me to\b|if you(?:'d|’d| would)? (?:like|want),? i (?:can|could)\b|i can also (?:make|write|create|add|turn|translate|give|do|adjust|shorten|draft|suggest|include)\b|i could also\b|let me know if you(?:'d|’d| would)? (?:like|want|need) (?:me to|a|an|another|any|it)\b|shall i\b|(?:should i|i can(?!['’]t|not| only| hardly| barely| never| see| feel| tell| relate| believe| imagine| hear| smell| taste)|happy to(?! (?:say|report|share|announce|help (?:you|out) (?:with|in) (?:the|this) (?:community|cause)))|feel free to(?! (?:share|tag|comment|follow|dm|reach out|stop by|visit|join)))\b[^\n]{0,60}?\b(?:versions?|captions?|headlines?|drafts?|shorter|longer|punchier|catchier|simpler|tone|emojis?|hashtags|changes|tweak|edit|adjust\w*|rewrite|rephrase|shorten|lengthen|tighten|variations?|alternatives?|call to action|cta|source|image|prompt|title|translation|carousel|thread|reel|script)\b|(?:do you want|would you like) (?:a|an|another|some|more|any|a few|a couple of)(?: [\w-]+){0,2} (?:versions?|captions?|headlines?|hashtags?|drafts?|takes?|options?|ones?|variations?|alternatives?)\b|(?:want|need) (?:a|an|another|some|more|any|a few)(?: [\w-]+){0,2} (?:versions?|captions?|headlines?|hashtags?|drafts?|takes?|variations?|(?:headline|caption|hashtag|title) options?)\b|(?:want|need) (?:a|an|another) (?:[\w-]+ ){0,2}(?:one|take)\b)/i;
+  // A line to the post's readers: "Want me to share the recipe? Comment BREAD
+  // 👇". An offer to you that only mentions them ("Want me to add a question to
+  // get more comments?") isn't one.
+  const TO_YOU_RE = /^(?:(?:do you (?:want|need)|would you like|want|need) me to|if you(?:'d|’d| would)? (?:like|want),? i\b|i can also|i could also|let me know if you(?:'d|’d| would)? (?:like|want|need) (?:me to|a|an|another|any|some|more)|should i (?:add|include|write|make|create|put|end)|shall i)\b/i;
+  function readersLine(text) {
+    const t = String(text || "").replace(/["“‘'][^"”’']{1,80}["”’']/g, " ").replace(/^[^\p{L}]+/u, "");
+    const parts = t.split(/(?<=[.!?])\s+/);
+    if (TO_YOU_RE.test(parts[0])) return parts.slice(1).some(x => /^(?:comment|tag|follow|share|save|dm|subscribe|reply|type|drop)\b|👇/i.test(x.replace(/^[^\p{L}👇]+/u, "")));
+    return READERS_RE.test(t);
+  }
   // The assistant signing off after a caption that ends the reply.
-  const SIGNOFF_RE = /^(?:(?:i )?hope (?:this|that|it) helps|(?:i )?hope you (?:like|love|enjoy) (?:it|this|them)|let me know (?:what you think|if (?:this|that|it) works|if you need|if you(?:'d|’d| would) (?:like|prefer|want))|happy posting|good luck with (?:your|the|this) post|should i (?:make|write|create|translate|add|turn|do|try|change|adjust|shorten|lengthen|give|tweak|rewrite)\b|would you prefer (?:a|an) (?:[\w-]+ ){0,2}(?:tone|version|style|angle|caption|headline|length|format)\b)/i;
+  const SIGNOFF_RE = /^(?:(?:i )?hope (?:this|that|it) helps|let me know if (?:this|that|it) works|let me know if you need (?:anything|any)(?: else| changes| edits| tweaks| help)|need (?:more|any|other) (?:options|ideas|versions|changes)\?$|let me know if you(?:'d|’d| would) (?:like|prefer|want) (?:me|a|an|another|any|some|more)|happy posting|good luck with (?:your|the|this) post|should i (?:make|write|create|translate|turn|change|adjust|shorten|lengthen|tweak|rewrite) (?:it|this|that|the|a|an|another|one|some)\b|would you prefer (?:a|an) (?:[\w-]+ ){0,2}(?:tone|version|style|angle|caption|headline|length|format)\b)/i;
   // Said to the post's readers, not to you: "Want me to share the recipe?
   // Comment BREAD 👇" is the post's own call to action.
   const READERS_RE = /\b(?:comment|comments|below|dm|follow (?:us|me|for)|tag (?:a|us|me|someone|your)|link in (?:bio|comments)|save this|share this|subscribe)\b|👇/i;
@@ -142,10 +152,10 @@
   const PREFIX_RE = /^([\p{L}\p{M}][\p{L}\p{M}'’ -]{0,24}?)\s?[:：]\s*\S/u;
   // A critique of a headline, not a headline: "Strong hook, but…", "8/10",
   // "Consider a stronger verb", "I'd cut the last line".
-  const CRIT_RE = /(?:\b(?:strong|good|great|solid|nice|weak) (?:hook|overall|opening|headline)\b[^.!?\n]{0,40}\bbut\b|\b(?:consider|try) (?:cutting|changing|adding|removing|swapping|using|making|leading with)\b[^.!?\n]{0,12}\b(?:(?:the|this|that) (?:headline|hook|verb|word|caption|number|line|ending|opening|title)\b|it\b)|\bconsider (?:a|an) (?:more |less )?(?:specific|stronger|shorter|different|punchier|active) (?:verb|word|hook|headline|opening|title)\b|\bi'?d (?:tighten|trim|shorten|rework|rewrite|punch up) it\b|\bi'?d (?:cut|change|swap|tighten|trim|drop|rewrite|lead with|go with) (?:the|this|that|it|a|an|your)\b[^.!?\n]{0,30}\b(?:headline|hook|verb|word|caption|line|ending|opening|title|number|sentence|paragraph|emoji|hashtags?)\b|\btoo (?:long|wordy|short) by (?:about |around |~)?\d|\brepeats the headline\b)/i;
+  const CRIT_RE = /(?:\b(?:strong|good|great|solid|nice|weak) (?:hook|overall|opening|headline)\b[^.!?\n]{0,40}\bbut\b|\b(?:consider|try) (?:cutting|changing|adding|removing|swapping|using|making|leading with)\b[^.!?\n]{0,12}\b(?:(?:the|this|that) (?:headline|hook|verb|word|caption|number|line|ending|opening|title)\b|it\b(?! (?:into|for|with|as|in|on|at|a|an|every|each|before|after|together|up|out|over|from)\b))|\bconsider (?:a|an) (?:more |less )?(?:specific|stronger|shorter|different|punchier|active) (?:verb|word|hook|headline|opening|title)\b|\bi'?d (?:tighten|trim|shorten|rework|rewrite|punch up) it\b|\bi'?d (?:cut|change|swap|tighten|trim|drop|rewrite|lead with|go with) (?:the|this|that|it|a|an|your)\b[^.!?\n]{0,30}\b(?:headline|hook|verb|word|caption|line|ending|opening|title|number|sentence|paragraph|emoji|hashtags?)\b|\btoo (?:long|wordy|short) by (?:about |around |~)?\d|\brepeats the headline\b|\b(?:only|one) thing i'?d (?:change|cut|tweak|fix|swap)\b)/i;
   // Critiques quote a word or two of the headline: "Try cutting “after viral
   // video”", "“stunned” is overused".
-  const CRIT_QUOTE_RE = /\b(?:consider|try) (?:cutting|changing|adding|removing|swapping|using|leading with)\b[^.!?\n]{0,12}["“'‘]|["”'’] (?:is|feels|sounds) overused\b/i;
+  const CRIT_QUOTE_RE = /\b(?:consider|try) (?:cutting|changing|adding|removing|swapping|using|leading with)\b[^.!?\n]{0,12}["“'‘]|["”'’] (?:is|feels|sounds) overused\b|\bi'?d (?:cut|change|swap|drop|replace) ["“‘]/i;
   const CRIT_NUM_RE = /^\s*[-–—•*]?\s*\d+(?:\.\d)?\s*\/\s*10\s*(?:[—–\-:.,!(]|$)|\b\d+\s*(?:characters|chars)\b[^.!?\n]{0,30}\b(?:cut|under|over|limit|too long)\b/i;
   // Quoted speech is someone in the story, not the assistant, so it's left
   // out, except where a critique quotes the words it's about.
@@ -156,7 +166,7 @@
   // Weaker signs of a review ("Clear and punchy. I'd keep it as is.",
   // "Engaging, 7/10."), each also found in stories: a review has two, at
   // least one of them in the headline.
-  const CRIT_WEAK_RE = /\bi'?d keep\b|\bkeep it as is\b|\bworks (?:well|fine|great)\b|\bcould (?:be|use) (?:a |an )?(?:bit |little )?(?:\w+er|stronger|more|less|tighter|shorter)\b|\b(?:a bit|a little|slightly|too) (?:long|short|wordy|vague|generic|flat|rushed|busy)\b|\baim for\b|\b\d+(?:\.\d)?\s*\/\s*10\b|\(\s*\d+\s*(?:characters|chars)\s*\)|\b(?:consider|try) (?:adding|cutting|shortening|tightening|trimming|using|making|changing|removing|swapping|leading)\b|\bfeels (?:rushed|flat|long|generic|vague|off|weak)\b|\b(?:clear|short|catchy|punchy|strong|solid|good|great) and (?:punchy|concise|emotional|clear|catchy|engaging|direct)\b|\b(?:catchy|good|solid|strong|engaging|nice|clear|works),? but\b|^(?:solid|good|great|nice|strong|clear|engaging|catchy)\b[.!,]|\bneeds work\b|\bit'?s (?:vague|generic|flat|bland|wordy|too long|too short)\b|\btoo wordy\b|\btry something like\b|\bmake it (?:shorter|longer|punchier|clearer|tighter|simpler|snappier)\b|\bput the (?:[\w-]+ ){0,2}first\b|\blead with (?:the|a|his|her|their)\b|\bmaybe (?:end|start|add|try|cut|use|open|lead)\b|\bcut (?:the last|the first|the second|it to|["“])/gi;
+  const CRIT_WEAK_RE = /^(?:works|reads) (?:well|fine|great)\b|\bi'?d keep\b|\bkeep it as is\b|\bworks,? but\b|\bcould (?:be|use) (?:a |an )?(?:bit |little )?(?:punchier|tighter|snappier|clearer|catchier|shorter|stronger (?:hook|verb|ending|opening)|more specific)\b|\b(?:a bit|a little|slightly) (?:long|wordy|vague|generic|flat|rushed|busy)\b|\baim for (?:under|about|around|fewer than|less than) \d+\s*(?:characters|chars|words)\b|^\s*\d+(?:\.\d)?\s*\/\s*10\b|[—–-]\s*\d+(?:\.\d)?\s*\/\s*10\s*[.!]?$|\b\d+(?:\.\d)?\s*\/\s*10[.,]|\(\s*\d+\s*(?:characters|chars)\s*\)|\b(?:consider|try) (?:adding|cutting|shortening|tightening|trimming|swapping|leading) (?:a |an |the )?(?:call to action|cta|question|hook|emoji|line|sentence|word|number|headline|caption|ending|opening|last)\b|\bfeels (?:rushed|flat|generic|vague|off|weak)\b|\b(?:clear|short|catchy|punchy|strong|solid|good|great) and (?:punchy|concise|emotional|clear|catchy|engaging|direct)\b|\b(?:catchy|good|solid|strong|engaging|nice|clear),? but\b|^(?:solid|good|great|nice|strong|clear|engaging|catchy)\b[.!,]|\bneeds work\b|\bit'?s (?:vague|generic|flat|bland|wordy)\b|\btoo wordy\b|\btry something like\b|\bmake it (?:shorter|longer|punchier|clearer|tighter|simpler|snappier)\b|\bput the (?:number|name|hook|emoji|question|key detail|stat|location) first\b|\blead with (?:the|a) (?:number|name|dog'?s name|hook|stat|question|emotion|twist)\b|\bmaybe (?:end|start|open|lead) with\b|\bcut (?:the last|the first|the second) (?:line|sentence|paragraph|bit|part)\b|\bcut it to\b|\bcut ["“]/gi;
   const weakCues = (s) => new Set((flat(s).replace(/["“][^"”]*["”]/g, " ").match(CRIT_WEAK_RE) || []).map(x => x.toLowerCase())).size;
   const review = (h, c) => { const n = weakCues(h); return n >= 2 || (n >= 1 && weakCues(c) >= 1); };
   const NOISE_RE = /^(?:thought for \d+|searched \d+|analy[sz]ed|reasoned for|\d+\s*\/\s*\d+$|claude can make mistakes|chatgpt can make mistakes|message (?:claude|chatgpt))/i;
@@ -369,7 +379,7 @@
       const nsh = next && caseShape(next.text);
       const headlineNext = !!next && !next.label && lenOf(next.text) <= 150 && sentenceCount(next.text) <= 1
         && (next.heading || next.bold || (nsh.caps >= 0.85 && nsh.words >= 3));
-      if ((sh.caps >= 0.6 || sh.title >= 0.6) && !headlineNext) first.label = null;
+      if (sh.caps >= 0.85 || ((sh.caps >= 0.6 || sh.title >= 0.6) && !headlineNext)) first.label = null;
       else if (headlineNext) first.preface = true;      // the assistant's, before the post
     }
     // "plaintext" just above a labelled post or the code block itself.
@@ -436,33 +446,21 @@
       said.push(x.raw);
     }
     const t = said.join("\n");
+    // "Image: Courtesy of the fire department" is a credit; "Image: a firefighter
+    // holding the kitten" describes a picture to use.
+    if (lab.name === "image") return !/\b(?:courtesy|credit|©|photo by|photographed by|via|source)\b/i.test(t);
     return /^\s*(?:[-*•·]|\d{1,2}[.)])\s/m.test(t)
+      // checking the facts, and how the post will do
+      || /\b(?:verif(?:y|ied)|confirmed by|outlets?|double-check|fact-check|confirm (?:it|this|the)|before (?:you )?(?:post|posting|publishing)|based on (?:a |the )?(?:local |news )?(?:report|reports|article)|news report|details may change|permission|engagement|engaging|shareable|drives? (?:shares|comments|clicks|engagement)|go viral|perform(?:s|ed)? well|best (?:time|reach)|more reach|for reach|post (?:it |this )?(?:between|at|in the|on)|names? (?:were|was|have been) changed|for privacy|algorithm|audience|on (?:facebook|instagram|tiktok|linkedin|x|twitter))\b/i.test(t)
+      // a picture to use
+      || /\b(?:close-?up|wide shot|natural light|lighting|photo of|picture of|shot of|image of)\b/i.test(t)
       || /\b(?:caption|headline|hashtags?|characters?|words?|emojis?|tone|hook|version|draft|i kept|i used|i added|i chose|i made|i wrote|i went with|feel free|you can|swap)\b/i.test(t)
       // the same, said in Chinese or Korean ("我把标题写得更短", "제목을 더 짧게")
-      || /标题|標題|文案|话题|話題|标签|標籤|字数|字數|表情|语气|語氣|版本|我(?:把|用|加|保留|选|写|改)|제목|캡션|해시태그|글자|이모지|버전|어조/.test(t);
+      || /标题|標題|文案|话题|話題|标签|標籤|字数|字數|表情|语气|語氣|版本|我(?:把|用|加|保留|选|写|改)|核实|核實|整理|根据|根據|报道|報道|来源|來源|发布前|發布前|配图|配圖|제목|캡션|해시태그|글자|이모지|버전|어조|확인|작성|보도|출처|바탕으로/.test(t);
   }
 
-  // Is a note the caption's last words? Its own paragraph (for "Note:" on a
-  // line of its own, the paragraph under it), then nothing but hashtags, chat
-  // or more notes before the next label or the end.
-  function noteAtEnd(lines, k, lab, startsPara) {
-    let j = k + 1;
-    if (lab.standalone) while (j < lines.length && lines[j].blank) j++;
-    // A note inside a paragraph is just its own line.
-    if (startsPara || lab.standalone) while (j < lines.length && !lines[j].blank && !lines[j].label) j++;
-    for (; j < lines.length; j++) {
-      const x = lines[j];
-      if (x.label) return true;
-      if (x.blank || x.tagOnly || x.meta || x.noise || x.chatter) continue;
-      return false;
-    }
-    return true;
-  }
-  // The post already ended with its hashtags.
-  const closedByTags = (sec) => {
-    const ls = sec.lines.filter(x => !x.blank);
-    return ls.some(x => x.tagOnly) || (ls.length > 0 && cutTrailingTags(ls[ls.length - 1].text).tags.length > 0);
-  };
+  // The post already ended with its own line of hashtags.
+  const closedByTags = (sec) => sec.lines.some(x => x.tagOnly);
 
   // "说明" / "설명" (a description) under a title, with no caption label: the caption.
   const DESCRIPTION = new Set(["说明", "說明", "설명"]);
@@ -482,14 +480,15 @@
         // "Note:", "Why:" starting a paragraph after the post's hashtags, or
         // as the caption's last words, are the assistant's; in the middle of
         // the caption, only when they talk about the writing.
-        const theirs = lab.meta && (((startsPara || lab.standalone) && (lab.meta === "always" || assistantNote(lab, lines, k)))
-          || (inCaption && (closedByTags(cur) || noteAtEnd(lines, k, lab, startsPara))));
+        const theirs = lab.meta && (((startsPara || lab.standalone || DESCRIPTION.has(lab.name)) && (lab.meta === "always" || assistantNote(lab, lines, k)))
+          || (inCaption && closedByTags(cur)));
         const asText = lab.field === "drop" && lab.soft && !theirs;
         if (inCaption && (asText || (lab.field === "caption" && lab.weak && !cur.weak))) {
           cur.lines.push(Object.assign({}, l, { label: null }));
           continue;
         }
-        if (DESCRIPTION.has(lab.name) && !hasCaption && cur && cur.field === "headline" && !assistantNote(lab, lines, k)) {
+        if (DESCRIPTION.has(lab.name) && !hasCaption && cur && cur.field === "headline" && cur.lines.filter(x => !x.blank).length <= 1
+          && !assistantNote(lab, lines, k)) {
           cur = { field: "caption", name: lab.name, weak: false, idx: 0, note: "", lines: [], at: l.i };
           if (lab.rest) cur.lines.push(makeLine(lab.rest, { heading: l.heading, bold: l.bold }));
           sections.push(cur);
@@ -614,11 +613,11 @@
     let dropped = 0;
     const drop = (p) => { dropped++; p.forEach(l => { const c = cutTrailingTags(l.text); tags.push(...(c.text.match(TAG_RE) || []), ...c.tags); }); };
     const bare = (l) => l.text.replace(/^[^\p{L}]+/u, "").replace(/[\s\p{Extended_Pictographic}\u200d\ufe0f]+$/u, "");
-    const assist = (l) => ASSIST_RE.test(bare(l)) && !READERS_RE.test(l.text);
+    const assist = (l) => ASSIST_RE.test(bare(l)) && !readersLine(l.text);
     const offer = (l) => assist(l) || OFFER_RE.test(bare(l));
     // The reply's last words with no hashtags after the caption: "Hope this
     // helps!", "Should I make it more urgent?" is the assistant signing off.
-    const signOff = (l) => assist(l) || (SIGNOFF_RE.test(bare(l)) && !READERS_RE.test(l.text));
+    const signOff = (l) => assist(l) || (SIGNOFF_RE.test(bare(l)) && !readersLine(l.text));
     if (mode === "keep") {
       while (out.length > 1 && out[out.length - 1].every(assist)) drop(out.pop());
     } else {
@@ -666,16 +665,17 @@
   // "Here's a headline: …", "Suggested headline: …": the chat introducing a
   // headline isn't part of it. ("Try this:", "My pick:" can be a headline's
   // own kicker, so they stay.)
-  const LEAD_RE = /^(?:(?:sure|ok(?:ay)?|absolutely|of course|got it|perfect)[!,.]?\s+)?(?:here(?:'s|’s| is| are)(?: (?:a|an|the|your|my))?(?: [\w’'-]+){0,2}? (?:headline|title|hook|version|option|caption|take|pick|suggestion|rewrite)s?|here you go|i'?d go with|(?:shorter|punchier|longer|catchier|simpler|better|stronger|alternative|revised|new|final|updated|suggested|rewritten) (?:version|one|option|take|headline|title|hook)|(?:headline|title) (?:idea|suggestion|option)s?)\s*[:：]\s*/i;
+  const LEAD_RE = /^(?:(?:sure|ok(?:ay)?|absolutely|of course|got it|perfect)[!,.]?\s+)?(?:here(?:'s|’s| is| are)(?: (?:a|an|the|your|my))?(?: [\w’'-]+){0,2}? (?:headline|title|hook|version|option|caption|take|pick|suggestion|rewrite)s?|here you go|i'?d go with|(?:shorter|punchier|longer|catchier|simpler|better|stronger|alternative|revised|new|final|updated|suggested|rewritten) (?:version|one|option|take|headline|title|hook)|(?:headline|title) (?:idea|suggestion|option)s?|how about|punchier|shorter|suggestion)\s*[:：]\s*/i;
   // "Try this: dog walks home" is chat; "Try This: The 4-7-8 Breathing Trick"
   // and "MY PICK: …" are a headline's own kicker, and so is anything you labelled.
-  const KICK_LEAD_RE = /^(?:try this|how about|my (?:pick|choice|favou?rite)|punchier|shorter|suggestion)\s*[:：]\s*/i;
+  const KICK_LEAD_RE = /^(?:try this|my (?:pick|choice|favou?rite))\s*[:：]\s*/i;
   function stripLead(r) {
     let m = r.headline && r.headline.match(LEAD_RE);
     if (!m && r.headline && !r.labels.headline) {
       const k = r.headline.match(KICK_LEAD_RE);
       const after = k ? caseShape(r.headline.slice(k[0].length)) : null;
-      if (k && after.caps < 0.6 && after.title < 0.6 && caseShape(k[0]).caps < 0.6) m = k;
+      const quoted = k && /^["“]/.test(r.headline.slice(k[0].length));
+      if (k && (quoted || (after.caps < 0.6 && after.title < 0.6 && caseShape(k[0]).caps < 0.6))) m = k;
     }
     if (!m) return;
     const rest = r.headline.slice(m[0].length).replace(/^["“*]+|["”*]+$/g, "").trim();
@@ -882,8 +882,27 @@
     // words of its own ("OPTION 2 (Rated 8/10)") never is.
     const om = (l) => l.option || l.optionLoose;
     const header = (o) => !o.note || /^[(\[]/.test(o.note) || /^(?:rated|score)\b/i.test(o.note);
-    const choice = (o) => wordsOf(o.note).length >= 4;
-    const optionRun = lines.filter(l => om(l) && !header(om(l)) && choice(om(l))).length >= 2;
+    // Each run of option lines is decided whole: inside the story it's the
+    // post's (a poll); before the story, after its hashtags or after "Shorter
+    // headline ideas:" it lists headline choices, and goes with its lead-in.
+    const optDrop = new Set();
+    for (let k = 0; k < lines.length; k++) {
+      if (!om(lines[k]) || header(om(lines[k]))) continue;
+      let e = k;
+      while (e + 1 < lines.length && om(lines[e + 1]) && !header(om(lines[e + 1]))) e++;
+      let p = k - 1;
+      while (p >= 0 && lines[p].blank) p--;
+      const lead = p >= 0 ? lines[p] : null;
+      const leadIn = !!lead && !lead.label && /[:：]\s*$/.test(lead.text)
+        && /\b(?:headlines?|titles?|hooks?|alternatives?|other (?:versions?|options?|takes?)|more (?:versions?|options?|takes?))\b/i.test(lead.text);
+      const before = lines.slice(0, k);
+      const bodyBefore = before.some(x => !x.blank && !x.chatter && !x.label && !x.tagOnly && !om(x) && (lenOf(x.text) > 60 || sentenceCount(x.text) >= 2));
+      if (leadIn || !bodyBefore || before.some(x => x.tagOnly)) {
+        for (let x = k; x <= e; x++) optDrop.add(x);
+        if (leadIn) optDrop.add(p);
+      }
+      k = e;
+    }
     for (let k = 0; k < lines.length; k++) {
       const l = lines[k];
       const lab = l.label;
@@ -892,8 +911,8 @@
       // The assistant's notes ("Notes:", "Angle: …") starting a paragraph go,
       // like a source list; "Tip:" and "Photo:" in a post stay.
       const hardDrop = !!(lab && lab.field === "drop" && (!lab.soft || l.preface || (lab.meta && startsPara
-        && (lab.meta === "always" || tagged || noteAtEnd(lines, k, lab, startsPara) || assistantNote(lab, lines, k)))));
-      if (l.tagOnly || (!l.blank && cutTrailingTags(l.text).tags.length)) tagged = true;
+        && (lab.meta === "always" || tagged || assistantNote(lab, lines, k)))));
+      if (l.tagOnly) tagged = true;
       if (hardDrop && !lab.standalone && lab.soft) { skip = true; continue; }
       if (hardDrop && lab.standalone) { skip = true; continue; }
       if (skip && lab && !hardDrop) skip = false;
@@ -901,7 +920,7 @@
       if (skip) continue;
       if (l.blank || l.sep) { out.push(makeLine("", null)); continue; }
       if (l.noise || l.meta || hardDrop) continue;
-      if (om(l) && (header(om(l)) || (optionRun && choice(om(l))) || (l.option && !optionRun && wordsOf(om(l).note).length >= 4))) continue;
+      if ((om(l) && header(om(l))) || optDrop.has(k)) continue;
       if (lab && lab.field !== "drop") {
         if (lab.rest) out.push(Object.assign({}, l, { text: lab.rest, label: null, wasLabel: lab.field }));
         continue;
@@ -1176,8 +1195,7 @@
       const leadText = lead.map(l => l.text).join(" ");
       const leadIn = lead.length > 0 && from > firstLab && (/[:：]\s*$/.test(leadText) || lead.every(l => l.chatter)
         || INTRO_RE.test(leadText) || OFFER_RE.test(leadText) || ASSIST_RE.test(leadText));
-      preferOpts = /\b(?:original|your (?:draft|post|version)|current (?:version|post|draft)|before)\b/i.test(opener)
-        || (leadIn && /\b(?:improved|rewritten|revised|better|updated|stronger|punchier|polished|new) (?:versions?|options?|takes?|drafts?)\b/i.test(leadText));
+      preferOpts = /\b(?:your (?:original|draft|current (?:post|version|draft))|(?:the|my) original (?:post|version|draft|caption)|original version|current version)\b/i.test(opener);
       if (!preferOpts) mainOnly = above.slice(0, leadIn ? from : end);
     }
     if (opt && (!fullAbove || preferOpts) && (ownLabels || (!labelledAbove && !opt.some(o => o.loose)))) {
@@ -1273,11 +1291,8 @@
     if (/\t/.test(r.headline)) return false;                       // a table row
     // A critique ("Strong hook, but it's 112 characters. Try cutting…") isn't
     // a story; a headline of three short sentences can be.
-    // Advice in a caption ("Try cutting it into squares") is a story's own
-    // unless the headline reads like a review too.
     const cap400 = String(r.caption).slice(0, 400);
-    const sane = !critique(r.headline, true) && !(critique(cap400) && weakCues(r.headline) >= 1) && !review(r.headline, cap400)
-      && lenOf(flat(r.headline)) <= 300;
+    const sane = !critique(r.headline, true) && !critique(cap400) && !review(r.headline, cap400) && lenOf(flat(r.headline)) <= 300;
     if (labelledPair(r) && sane) return true;
     if (mode === "labels") return false;
     if (mode === "loose") return r.confidence.overall >= 0.5;
